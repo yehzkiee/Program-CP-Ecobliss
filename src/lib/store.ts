@@ -9,6 +9,7 @@ import {
   boms as seedBoms,
   btbs as seedBtbs,
   customers as seedCustomers,
+  ensureSeedById,
   finishGoods as seedFgs,
   gudangList as seedGudang,
   items as seedItems,
@@ -170,6 +171,36 @@ export const useDataStore = create<DataState>()(
         }),
       resetDemo: () => set({ ...seed }),
     }),
-    { name: "program-cp-data" },
+    {
+      name: "program-cp-data",
+      version: 2,
+      migrate: (persisted) => {
+        const state = (persisted ?? {}) as Partial<DataState>;
+        return {
+          ...state,
+          items: ensureSeedById(seedItems, state.items ?? []),
+          finishGoods: ensureSeedById(seedFgs, state.finishGoods ?? []),
+          customers: ensureSeedById(seedCustomers, state.customers ?? []),
+          gudangList: ensureSeedById(seedGudang, state.gudangList ?? []),
+        };
+      },
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<DataState>;
+        return {
+          ...current,
+          ...p,
+          items: ensureSeedById(seedItems, p.items ?? current.items),
+          finishGoods: ensureSeedById(seedFgs, p.finishGoods ?? current.finishGoods),
+          customers: ensureSeedById(
+            seedCustomers,
+            p.customers ?? current.customers,
+          ),
+          gudangList: ensureSeedById(
+            seedGudang,
+            p.gudangList ?? current.gudangList,
+          ),
+        };
+      },
+    },
   ),
 );

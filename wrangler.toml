@@ -1,0 +1,30 @@
+# Cloudflare Workers config for Next.js via @opennextjs/cloudflare
+# Docs: https://opennext.js.org/cloudflare
+#
+# IMPORTANT:
+# Jangan pakai `wrangler pages deploy` dan jangan set `pages_build_output_dir`.
+# Project ini Next.js App Router (ada route dinamis) → deploy ke Workers via OpenNext.
+# Perintah yang benar: `npm run deploy`  (opennextjs-cloudflare build && deploy)
+# Output build OpenNext: `.open-next/worker.js` + `.open-next/assets`
+
+name = "program-cp-ecoblis"
+main = ".open-next/worker.js"
+compatibility_date = "2026-09-21"
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+# Optional: self-reference for ISR / cache revalidation
+[[services]]
+binding = "WORKER_SELF_REFERENCE"
+service = "program-cp-ecoblis"
+
+[observability]
+enabled = true
+
+# Optional later: enable Next.js incremental cache via R2
+# [[r2_buckets]]
+# binding = "NEXT_INC_CACHE_R2_BUCKET"
+# bucket_name = "program-cp-ecoblis-cache"

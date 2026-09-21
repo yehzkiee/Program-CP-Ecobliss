@@ -13,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useDataStore } from "@/lib/store";
-import { formatDateID } from "@/lib/utils";
+import { formatDateID, sortByDateDesc } from "@/lib/utils";
 
 export default function BtbListPage() {
   const btbs = useDataStore((s) => s.btbs);
@@ -23,11 +23,16 @@ export default function BtbListPage() {
     [jenis],
   );
 
+  const sorted = useMemo(
+    () => sortByDateDesc(btbs, "tanggalTerima", "createdAt"),
+    [btbs],
+  );
+
   return (
     <div>
       <PageHeader
-        title="BTB — Bukti Terima Barang"
-        description="Pencatatan barang masuk. Item di atas, Finish Good di bawah."
+        title="Bukti Terima Barang (BTB)"
+        description="Daftar penerimaan barang dari customer ke gudang. Buka dokumen untuk melihat detail material dan finish good."
         action={
           <Button asChild className="bg-emerald-700 hover:bg-emerald-800">
             <Link href="/transaksi/btb/baru">Buat BTB</Link>
@@ -43,26 +48,41 @@ export default function BtbListPage() {
               <TableHead>Tgl Terima</TableHead>
               <TableHead>Jenis Transaksi</TableHead>
               <TableHead>Item / FG</TableHead>
-              <TableHead className="text-right">Aksi</TableHead>
+              <TableHead className="text-right" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {btbs.map((b) => (
+            {sorted.map((b) => (
               <TableRow key={b.id}>
-                <TableCell className="font-medium">{b.no}</TableCell>
+                <TableCell>
+                  <Link
+                    href={`/transaksi/btb/${b.id}`}
+                    className="text-emerald-800 hover:underline"
+                  >
+                    {b.no}
+                  </Link>
+                </TableCell>
                 <TableCell>{formatDateID(b.tanggalTerima)}</TableCell>
                 <TableCell>{jenisMap[b.jenisTransaksiId]?.nama ?? "-"}</TableCell>
                 <TableCell>
                   {b.items.length} item · {b.fgs.length} FG
                 </TableCell>
-                <TableCell className="space-x-2 text-right">
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/transaksi/btb/${b.id}`}>Detail</Link>
-                  </Button>
-                  <Button asChild variant="ghost" size="sm">
-                    <Link href={`/print/btb/${b.id}`} target="_blank">
-                      Cetak
-                    </Link>
+                <TableCell className="text-right">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      window.open(
+                        `/print/btb/${b.id}`,
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
+                    }}
+                  >
+                    Cetak
                   </Button>
                 </TableCell>
               </TableRow>

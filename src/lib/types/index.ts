@@ -28,6 +28,21 @@ export interface MaterialItem {
   status: StatusAktif;
 }
 
+/** Turunan penerimaan material per batch (dari BTB / mock). */
+export interface MaterialBatch {
+  id: string;
+  itemId: string;
+  batchCustomer: string;
+  qtyMasuk: number;
+  qtySisa: number;
+  satuan: string;
+  tanggalMasuk: string;
+  sumberBtbId: string;
+  sumberBtbNo: string;
+  gudangId: string;
+  keterangan: string;
+}
+
 export interface FinishGood {
   id: string;
   kode: string;
@@ -69,6 +84,7 @@ export interface BomRevision {
   tanggal: string;
   bagianDirevisi: string;
   keterangan: string;
+  detailPerubahan?: string[];
   items: BomLineItem[];
   fgs: BomLineFg[];
 }
@@ -106,8 +122,12 @@ export interface Btb {
   no: string;
   tanggalTerima: string;
   jenisTransaksiId: string;
+  /** Customer pemilik barang (pengganti konsep Supplier). */
+  customerId?: string;
   items: BtbLineItem[];
   fgs: BtbLineFg[];
+  /** Foto bukti fisik penerimaan (data URL / path). */
+  fotoBukti?: string[];
   createdAt: string;
 }
 
@@ -145,6 +165,8 @@ export interface Bkb {
   bomMultiplier?: number;
   items: BkbLineItem[];
   fgs: BkbLineFg[];
+  /** Foto bukti fisik pengeluaran (data URL / path). */
+  fotoBukti?: string[];
   createdAt: string;
 }
 
@@ -155,6 +177,7 @@ export interface StockOpnameLine {
   nama: string;
   customerId: string;
   gudangId: string;
+  batchCustomer?: string;
   qtySistem: number;
   qtyAktual: number;
   selisih: number;
@@ -166,6 +189,7 @@ export interface StockOpname {
   tanggal: string;
   lines: StockOpnameLine[];
   keterangan: string;
+  metode?: "per_batch" | "per_item";
   createdAt: string;
 }
 
@@ -196,6 +220,8 @@ export interface Adjustment {
   status: AdjustmentStatus;
   keterangan: string;
   approvedBy?: string;
+  /** Foto bukti alasan adjustment. */
+  fotoBukti?: string[];
   createdAt: string;
 }
 

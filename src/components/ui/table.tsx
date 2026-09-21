@@ -1,7 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { cn } from "cn"
+import { cn } from "@/lib/utils"
+import {
+  tableBodyCellClass,
+  tableHeadCellClass,
+} from "@/lib/table-styles"
 
 function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
@@ -11,10 +15,23 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
     >
       <table
         data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
+        className={cn(
+          "w-full border-collapse caption-bottom text-sm",
+          className,
+        )}
         {...props}
       />
     </div>
+  )
+}
+
+function TableColGroup({ widths }: { widths: readonly string[] }) {
+  return (
+    <colgroup>
+      {widths.map((width, index) => (
+        <col key={index} className={width} />
+      ))}
+    </colgroup>
   )
 }
 
@@ -69,7 +86,8 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        "h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0",
+        tableHeadCellClass,
+        "whitespace-nowrap [&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}
@@ -82,7 +100,8 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
     <td
       data-slot="table-cell"
       className={cn(
-        "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
+        tableBodyCellClass,
+        "[&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}
@@ -105,6 +124,7 @@ function TableCaption({
 
 export {
   Table,
+  TableColGroup,
   TableHeader,
   TableBody,
   TableFooter,

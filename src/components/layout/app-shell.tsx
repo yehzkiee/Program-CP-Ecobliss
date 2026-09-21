@@ -23,6 +23,7 @@ import {
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ScrollToTop } from "@/components/layout/scroll-to-top";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/store";
 
@@ -128,7 +129,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <p className="text-sm font-medium">{user.nama}</p>
           <div className="mt-1 flex items-center gap-2">
             <Badge variant={user.role === "admin" ? "default" : "secondary"}>
-              {user.role === "admin" ? "Admin" : "Non-Admin"}
+              {user.role === "admin" ? "Super Admin" : "User"}
             </Badge>
             <button
               type="button"
@@ -158,6 +159,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-[linear-gradient(160deg,#f8faf9_0%,#eef2f0_45%,#f5f7f6_100%)]">
+      <ScrollToTop />
       <div className="mx-auto flex min-h-screen max-w-[1600px]">
         <aside className="hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar/90 backdrop-blur md:block">
           {SidebarContent}

@@ -1,17 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import {
-  ArrowLeftRight,
-  ClipboardCheck,
-  PackageMinus,
-  PackagePlus,
-} from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useDataStore } from "@/lib/store";
 import { buildStockRows } from "@/lib/mock/data";
+import {
+  colGroupDashboardStock,
+  tableBodyCellClass,
+  tableBodyCellMutedClass,
+  tableBodyCellRightClass,
+  tableHeadCellClass,
+  tableHeadCellRightClass,
+  tableShellClass,
+} from "@/lib/table-styles";
+import { formatJenisBarang, formatKodeNama } from "@/lib/utils";
 
 export default function DashboardPage() {
   const btbs = useDataStore((s) => s.btbs);
@@ -29,13 +33,9 @@ export default function DashboardPage() {
     gudangList,
   });
   const pending = adjustments.filter((a) => a.status === "menunggu_approval");
-
-  const shortcuts = [
-    { href: "/transaksi/btb/baru", label: "Buat BTB", icon: PackagePlus },
-    { href: "/transaksi/bkb/baru", label: "Buat BKB", icon: PackageMinus },
-    { href: "/transaksi/stock-opname/baru", label: "Stock Opname", icon: ClipboardCheck },
-    { href: "/transaksi/transfer/baru", label: "Transfer", icon: ArrowLeftRight },
-  ];
+  const cuplikanStok = stock
+    .filter((r) => r.customerNama.trim() !== "" && r.customerNama !== "-")
+    .slice(0, 6);
 
   return (
     <div>
@@ -62,24 +62,6 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         ))}
-      </div>
-
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {shortcuts.map((s) => {
-          const Icon = s.icon;
-          return (
-            <Link
-              key={s.href}
-              href={s.href}
-              className="flex items-center gap-3 rounded-xl border border-border/80 bg-white/90 px-4 py-3 transition hover:border-emerald-300 hover:bg-emerald-50/50"
-            >
-              <div className="flex size-9 items-center justify-center rounded-lg bg-emerald-700/10 text-emerald-800">
-                <Icon className="size-4" />
-              </div>
-              <span className="text-sm font-medium">{s.label}</span>
-            </Link>
-          );
-        })}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -112,29 +94,43 @@ export default function DashboardPage() {
 
         <Card className="border-border/80 bg-white/90 shadow-none">
           <CardHeader>
-            <CardTitle className="text-base">Cuplikan Stok (per BTB sisa)</CardTitle>
+            <CardTitle className="text-base">Cuplikan Stok BTB Sisa</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className={tableShellClass}>
+                <colgroup>
+                  {colGroupDashboardStock.map((width, index) => (
+                    <col key={index} className={width} />
+                  ))}
+                </colgroup>
                 <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="pb-2 font-medium">Kode</th>
-                    <th className="pb-2 font-medium">Gudang</th>
-                    <th className="pb-2 text-right font-medium">Qty</th>
+                  <tr className="border-b bg-muted/30">
+                    <th className={tableHeadCellClass}>Nama Customer</th>
+                    <th className={tableHeadCellClass}>Produk/Item</th>
+                    <th className={tableHeadCellClass}>Gudang</th>
+                    <th className={tableHeadCellRightClass}>Qty</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {stock.slice(0, 6).map((r, idx) => (
-                    <tr key={`${r.refId}-${r.gudangId}-${idx}`} className="border-b last:border-0">
-                      <td className="py-2">
-                        <span className="font-medium">{r.kode}</span>
-                        <span className="ml-2 text-xs text-muted-foreground uppercase">
-                          {r.jenis}
+                  {cuplikanStok.map((r, idx) => (
+                    <tr
+                      key={`${r.refId}-${r.gudangId}-${idx}`}
+                      className="border-b last:border-0"
+                    >
+                      <td className={`${tableBodyCellClass} font-medium`}>
+                        {r.customerNama}
+                      </td>
+                      <td className={`${tableBodyCellClass} whitespace-normal`}>
+                        {formatKodeNama(r.kode, r.nama)}
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {formatJenisBarang(r.jenis)}
                         </span>
                       </td>
-                      <td className="py-2 text-muted-foreground">{r.gudangNama}</td>
-                      <td className="py-2 text-right font-medium">{r.qty}</td>
+                      <td className={tableBodyCellMutedClass}>{r.gudangNama}</td>
+                      <td className={`${tableBodyCellRightClass} font-medium`}>
+                        {r.qty}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

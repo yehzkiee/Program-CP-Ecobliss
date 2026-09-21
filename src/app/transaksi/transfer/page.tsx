@@ -15,6 +15,21 @@ import {
 import { useDataStore } from "@/lib/store";
 import { formatDateID } from "@/lib/utils";
 
+function gudangHint(tipe?: string) {
+  switch (tipe) {
+    case "wip":
+      return "WIP (barang dalam proses)";
+    case "fg":
+      return "FG (finish good)";
+    case "item":
+      return "Material";
+    case "reject":
+      return "Reject";
+    default:
+      return "";
+  }
+}
+
 export default function TransferListPage() {
   const transfers = useDataStore((s) => s.transfers);
   const gudangList = useDataStore((s) => s.gudangList);
@@ -27,7 +42,7 @@ export default function TransferListPage() {
     <div>
       <PageHeader
         title="Transfer Gudang"
-        description="Pindah Item/FG antar gudang (termasuk Item↔FG)."
+        description="Pindahkan material atau finish good dari satu gudang ke gudang lain, misalnya dari Gudang FG (finish good) ke Gudang WIP (barang dalam proses)."
         action={
           <Button asChild className="bg-emerald-700 hover:bg-emerald-800">
             <Link href="/transaksi/transfer/baru">Buat Transfer</Link>
@@ -42,22 +57,26 @@ export default function TransferListPage() {
               <TableHead>Tanggal</TableHead>
               <TableHead>Ringkasan</TableHead>
               <TableHead>Keterangan</TableHead>
-              <TableHead className="text-right">Aksi</TableHead>
+              <TableHead className="text-right" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {transfers.map((t) => (
               <TableRow key={t.id}>
-                <TableCell className="font-medium">{t.no}</TableCell>
+                <TableCell>{t.no}</TableCell>
                 <TableCell>{formatDateID(t.tanggal)}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">
+                <TableCell className="max-w-md whitespace-normal text-sm text-muted-foreground">
                   {t.lines
                     .slice(0, 2)
-                    .map(
-                      (l) =>
-                        `${l.kode}: ${gudangMap[l.dariGudangId]?.kode}→${gudangMap[l.keGudangId]?.kode}`,
-                    )
+                    .map((l) => {
+                      const dari = gudangMap[l.dariGudangId];
+                      const ke = gudangMap[l.keGudangId];
+                      const dariHint = gudangHint(dari?.tipe);
+                      const keHint = gudangHint(ke?.tipe);
+                      return `${l.nama} dipindah dari ${dari?.nama ?? "-"}${dariHint ? ` (${dariHint})` : ""} ke ${ke?.nama ?? "-"}${keHint ? ` (${keHint})` : ""}`;
+                    })
                     .join("; ")}
+                  {t.lines.length > 2 ? ` (+${t.lines.length - 2} baris)` : ""}
                 </TableCell>
                 <TableCell>{t.keterangan || "-"}</TableCell>
                 <TableCell className="text-right">

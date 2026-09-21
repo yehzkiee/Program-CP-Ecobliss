@@ -45,7 +45,7 @@ export default function BomListPage() {
               <TableHead>Revisi Aktif</TableHead>
               <TableHead>Tgl Revisi</TableHead>
               <TableHead>Item / FG Lines</TableHead>
-              <TableHead className="text-right">Aksi</TableHead>
+              <TableHead className="text-right" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -54,19 +54,23 @@ export default function BomListPage() {
               const fg = fgMap[b.fgId];
               return (
                 <TableRow key={b.id}>
-                  <TableCell className="font-medium">{b.kode}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link
+                      href={`/master/bom/${b.id}`}
+                      className="text-emerald-800 hover:underline"
+                    >
+                      {b.kode}
+                    </Link>
+                  </TableCell>
                   <TableCell>
-                    {fg ? `${fg.kode} — ${fg.nama}` : "-"}
+                    {fg ? `${fg.kode} - ${fg.nama}` : "-"}
                   </TableCell>
                   <TableCell>Rev. {latest?.revisi ?? "-"}</TableCell>
                   <TableCell>{formatDateID(latest?.tanggal ?? "")}</TableCell>
                   <TableCell>
                     {latest?.items.length ?? 0} item · {latest?.fgs.length ?? 0} FG
                   </TableCell>
-                  <TableCell className="space-x-2 text-right">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/master/bom/${b.id}`}>Detail / Revisi</Link>
-                    </Button>
+                  <TableCell className="text-right">
                     <Button asChild variant="ghost" size="sm">
                       <Link href={`/print/bom/${b.id}`} target="_blank">
                         Cetak

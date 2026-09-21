@@ -11,7 +11,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  SidebarNav,
+  SidebarNavGroup,
+  SidebarNavItem,
+  SidebarSubnavLayout,
+} from "@/components/shared/sidebar-subnav-layout";
 import {
   Table,
   TableBody,
@@ -22,19 +27,38 @@ import {
 } from "@/components/ui/table";
 import { buildStockRows } from "@/lib/mock/data";
 import { useDataStore } from "@/lib/store";
-import { formatDateID, formatDateTimeID } from "@/lib/utils";
+import {
+  formatDateID,
+  formatStatusLabel,
+  formatKodeNama,
+  formatJenisBarang,
+} from "@/lib/utils";
 
-const reports = [
-  { id: "stock", label: "1. Stock" },
-  { id: "mutasi", label: "2. Mutasi Stock" },
-  { id: "per-customer", label: "3. Stock per Customer" },
-  { id: "per-item", label: "4. Stock per Item" },
-  { id: "per-fg", label: "5. Stock per FG" },
-  { id: "per-batch", label: "6. Stock per Batch Cust" },
-  { id: "per-gudang", label: "7. Stock per Gudang" },
-  { id: "histori", label: "9. Histori Transaksi" },
-  { id: "titipan", label: "10. Rekap Barang Titipan" },
-] as const;
+type ReportItem = { id: string; label: string };
+
+const reportGroups: { label: string; items: ReportItem[] }[] = [
+  {
+    label: "Stok",
+    items: [
+      { id: "stock", label: "Stock" },
+      { id: "per-customer", label: "Per Customer" },
+      { id: "per-item", label: "Per Item" },
+      { id: "per-fg", label: "Per FG" },
+      { id: "per-batch", label: "Per Batch" },
+      { id: "per-gudang", label: "Per Gudang" },
+      { id: "titipan", label: "Barang Titipan" },
+    ],
+  },
+  {
+    label: "Mutasi & Histori",
+    items: [
+      { id: "mutasi", label: "Mutasi Stock" },
+      { id: "histori", label: "Histori Transaksi" },
+    ],
+  },
+];
+
+const allReports = reportGroups.flatMap((g) => g.items);
 
 export default function ReportPage() {
   const customers = useDataStore((s) => s.customers);
@@ -69,6 +93,22 @@ export default function ReportPage() {
       return matchCust && matchGudang && matchQ;
     });
   }, [stock, filterCust, filterGudang, q]);
+
+  const customerFilterItems = useMemo(
+    () => [
+      { value: "all", label: "Semua Customer" },
+      ...customers.map((c) => ({ value: c.id, label: c.nama })),
+    ],
+    [customers],
+  );
+
+  const gudangFilterItems = useMemo(
+    () => [
+      { value: "all", label: "Semua Gudang" },
+      ...gudangList.map((g) => ({ value: g.id, label: g.nama })),
+    ],
+    [gudangList],
+  );
 
   const histori = useMemo(() => {
     const rows: {
@@ -106,7 +146,7 @@ export default function ReportPage() {
         tanggal: a.tanggal,
         jenis: "Adjustment",
         no: a.no,
-        keterangan: `${a.status} · SO ${a.stockOpnameNo}`,
+        keterangan: `${formatStatusLabel(a.status)} · SO ${a.stockOpnameNo}`,
       });
     }
     return rows.sort((a, b) => b.tanggal.localeCompare(a.tanggal));
@@ -123,6 +163,9 @@ export default function ReportPage() {
     return Array.from(map.entries()).map(([key, qty]) => ({ key, qty }));
   };
 
+  const activeLabel =
+    allReports.find((r) => r.id === tab)?.label ?? "Laporan";
+
   return (
     <div>
       <PageHeader
@@ -130,59 +173,75 @@ export default function ReportPage() {
         description="Laporan stok & transaksi (data mock). Aging stock tidak termasuk."
       />
 
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row">
-        <Input
-          placeholder="Cari kode / nama / batch..."
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          className="max-w-sm bg-white"
-        />
-        <Select value={filterCust} onValueChange={(v) => setFilterCust(v ?? "")}>
-          <SelectTrigger className="w-full bg-white sm:w-48">
-            <SelectValue placeholder="Customer" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Customer</SelectItem>
-            {customers.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.nama}
-              </SelectItem>
+      <SidebarSubnavLayout
+        sidebar={
+          <SidebarNav>
+            {reportGroups.map((group) => (
+              <SidebarNavGroup key={group.label} label={group.label}>
+                {group.items.map((r) => (
+                  <SidebarNavItem
+                    key={r.id}
+                    label={r.label}
+                    active={tab === r.id}
+                    onClick={() => setTab(r.id)}
+                  />
+                ))}
+              </SidebarNavGroup>
             ))}
-          </SelectContent>
-        </Select>
-        <Select value={filterGudang} onValueChange={(v) => setFilterGudang(v ?? "")}>
-          <SelectTrigger className="w-full bg-white sm:w-48">
-            <SelectValue placeholder="Gudang" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Gudang</SelectItem>
-            {gudangList.map((g) => (
-              <SelectItem key={g.id} value={g.id}>
-                {g.nama}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <Tabs value={tab} onValueChange={(v) => setTab(v ?? "")}>
-        <TabsList className="mb-4 flex h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
-          {reports.map((r) => (
-            <TabsTrigger
-              key={r.id}
-              value={r.id}
-              className="rounded-md border bg-white data-[state=active]:border-emerald-300 data-[state=active]:bg-emerald-50"
+          </SidebarNav>
+        }
+      >
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-base font-semibold text-slate-900">
+            {activeLabel}
+          </h2>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input
+              placeholder="Cari kode / nama / batch..."
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="max-w-sm bg-white"
+            />
+            <Select
+              value={filterCust}
+              onValueChange={(v) => setFilterCust(v ?? "all")}
+              items={customerFilterItems}
             >
-              {r.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+              <SelectTrigger className="w-full bg-white sm:w-44">
+                <SelectValue placeholder="Customer" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Customer</SelectItem>
+                {customers.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.nama}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={filterGudang}
+              onValueChange={(v) => setFilterGudang(v ?? "all")}
+              items={gudangFilterItems}
+            >
+              <SelectTrigger className="w-full bg-white sm:w-44">
+                <SelectValue placeholder="Gudang" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Gudang</SelectItem>
+                {gudangList.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.nama}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
 
-        <TabsContent value="stock">
-          <StockTable rows={filteredStock} />
-        </TabsContent>
+        {tab === "stock" && <StockTable rows={filteredStock} />}
 
-        <TabsContent value="mutasi">
+        {tab === "mutasi" && (
           <div className="overflow-x-auto rounded-xl border bg-white">
             <Table>
               <TableHeader>
@@ -205,43 +264,43 @@ export default function ReportPage() {
               </TableBody>
             </Table>
           </div>
-        </TabsContent>
+        )}
 
-        <TabsContent value="per-customer">
+        {tab === "per-customer" && (
           <SimpleGroupTable
             title="Customer"
             rows={groupSum((r) => r.customerNama)}
           />
-        </TabsContent>
-        <TabsContent value="per-item">
+        )}
+        {tab === "per-item" && (
           <SimpleGroupTable
             title="Item"
             rows={groupSum((r) =>
-              r.jenis === "item" ? `${r.kode} — ${r.nama}` : "",
+              r.jenis === "item" ? formatKodeNama(r.kode, r.nama) : "",
             ).filter((r) => r.key)}
           />
-        </TabsContent>
-        <TabsContent value="per-fg">
+        )}
+        {tab === "per-fg" && (
           <SimpleGroupTable
             title="Finish Good"
             rows={groupSum((r) =>
-              r.jenis === "fg" ? `${r.kode} — ${r.nama}` : "",
+              r.jenis === "fg" ? formatKodeNama(r.kode, r.nama) : "",
             ).filter((r) => r.key)}
           />
-        </TabsContent>
-        <TabsContent value="per-batch">
+        )}
+        {tab === "per-batch" && (
           <SimpleGroupTable
             title="Batch Customer"
             rows={groupSum((r) => r.batchCustomer || "-")}
           />
-        </TabsContent>
-        <TabsContent value="per-gudang">
+        )}
+        {tab === "per-gudang" && (
           <SimpleGroupTable
             title="Gudang"
             rows={groupSum((r) => r.gudangNama)}
           />
-        </TabsContent>
-        <TabsContent value="histori">
+        )}
+        {tab === "histori" && (
           <div className="overflow-x-auto rounded-xl border bg-white">
             <Table>
               <TableHeader>
@@ -250,7 +309,7 @@ export default function ReportPage() {
                   <TableHead>Jenis</TableHead>
                   <TableHead>No</TableHead>
                   <TableHead>Detail</TableHead>
-                  <TableHead></TableHead>
+                  <TableHead />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -276,14 +335,14 @@ export default function ReportPage() {
               </TableBody>
             </Table>
           </div>
-        </TabsContent>
-        <TabsContent value="titipan">
+        )}
+        {tab === "titipan" && (
           <StockTable
             rows={filteredStock}
             caption="Rekap barang titipan customer (stok per BTB sisa)."
           />
-        </TabsContent>
-      </Tabs>
+        )}
+      </SidebarSubnavLayout>
     </div>
   );
 }
@@ -317,13 +376,13 @@ function StockTable({
         <TableBody>
           {rows.map((r, i) => (
             <TableRow key={i}>
-              <TableCell className="uppercase">{r.jenis}</TableCell>
-              <TableCell className="font-medium">{r.kode}</TableCell>
+              <TableCell>{formatJenisBarang(r.jenis)}</TableCell>
+              <TableCell>{r.kode}</TableCell>
               <TableCell>{r.nama}</TableCell>
               <TableCell>{r.customerNama}</TableCell>
               <TableCell>{r.gudangNama}</TableCell>
-              <TableCell>{r.batchCustomer}</TableCell>
-              <TableCell className="text-right">{r.qty}</TableCell>
+              <TableCell>{r.batchCustomer || "-"}</TableCell>
+              <TableCell className="text-right tabular-nums">{r.qty}</TableCell>
             </TableRow>
           ))}
         </TableBody>

@@ -13,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useDataStore } from "@/lib/store";
-import { formatDateID } from "@/lib/utils";
+import { formatDateID, sortByDateDesc } from "@/lib/utils";
 
 export default function BkbListPage() {
   const bkbs = useDataStore((s) => s.bkbs);
@@ -23,11 +23,16 @@ export default function BkbListPage() {
     [jenis],
   );
 
+  const sorted = useMemo(
+    () => sortByDateDesc(bkbs, "tanggalKeluar", "createdAt"),
+    [bkbs],
+  );
+
   return (
     <div>
       <PageHeader
-        title="BKB — Bukti Keluar Barang"
-        description="Pengeluaran wajib memilih No. BTB sumber. Bisa satuan atau dari BOM."
+        title="Bukti Keluar Barang (BKB)"
+        description="Daftar pengeluaran barang dari gudang. Setiap baris wajib merujuk ke nomor BTB sumber agar stok sisa tetap akurat."
         action={
           <Button asChild className="bg-emerald-700 hover:bg-emerald-800">
             <Link href="/transaksi/bkb/baru">Buat BKB</Link>
@@ -44,27 +49,42 @@ export default function BkbListPage() {
               <TableHead>Jenis</TableHead>
               <TableHead>No. SPK</TableHead>
               <TableHead>Item / FG</TableHead>
-              <TableHead className="text-right">Aksi</TableHead>
+              <TableHead className="text-right" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {bkbs.map((b) => (
+            {sorted.map((b) => (
               <TableRow key={b.id}>
-                <TableCell className="font-medium">{b.no}</TableCell>
+                <TableCell>
+                  <Link
+                    href={`/transaksi/bkb/${b.id}`}
+                    className="text-emerald-800 hover:underline"
+                  >
+                    {b.no}
+                  </Link>
+                </TableCell>
                 <TableCell>{formatDateID(b.tanggalKeluar)}</TableCell>
                 <TableCell>{jenisMap[b.jenisTransaksiId]?.nama ?? "-"}</TableCell>
                 <TableCell>{b.noSpk || "-"}</TableCell>
                 <TableCell>
                   {b.items.length} item · {b.fgs.length} FG
                 </TableCell>
-                <TableCell className="space-x-2 text-right">
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/transaksi/bkb/${b.id}`}>Detail</Link>
-                  </Button>
-                  <Button asChild variant="ghost" size="sm">
-                    <Link href={`/print/bkb/${b.id}`} target="_blank">
-                      Cetak
-                    </Link>
+                <TableCell className="text-right">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      window.open(
+                        `/print/bkb/${b.id}`,
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
+                    }}
+                  >
+                    Cetak
                   </Button>
                 </TableCell>
               </TableRow>

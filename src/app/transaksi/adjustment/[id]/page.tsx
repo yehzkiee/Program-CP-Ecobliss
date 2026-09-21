@@ -3,7 +3,12 @@
 import { Suspense, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { BackLink, PageHeader, StatusBadge } from "@/components/shared/page-header";
+import {
+  BackLink,
+  PageHeader,
+  StatusBadge,
+} from "@/components/shared/page-header";
+import { FileUpload, type UploadedFile } from "@/components/shared/file-upload";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,7 +23,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDocNo } from "@/lib/mock/data";
 import { useAuthStore, useDataStore } from "@/lib/store";
 import type { Adjustment, AdjustmentLine } from "@/lib/types";
-import { todayISO, uid } from "@/lib/utils";
+import {
+  colGroupAdjustmentLines,
+  tableBodyCellClass,
+  tableBodyCellRightClass,
+  tableHeadCellClass,
+  tableHeadCellRightClass,
+  tableShellClass,
+} from "@/lib/table-styles";
+import { todayISO, uid, isSuperAdmin, cn, formatJenisBarang } from "@/lib/utils";
+
+function movementLabel(line: AdjustmentLine) {
+  if (line.in > 0 && line.out === 0) return "Menambah stok";
+  if (line.out > 0 && line.in === 0) return "Mengurangi stok";
+  if (line.in > 0 && line.out > 0) return "Koreksi campuran";
+  return "Tanpa perubahan";
+}
 
 function AdjustmentFormInner() {
   const params = useParams<{ id: string }>();
@@ -32,6 +52,7 @@ function AdjustmentFormInner() {
   const user = useAuthStore((s) => s.currentUser);
   const existing = adjustments.find((a) => a.id === params.id);
   const readOnly = !isNew;
+  const canApprove = isSuperAdmin(user?.role);
 
   const soFromQuery = search.get("so");
   const initialSo =
@@ -41,8 +62,20 @@ function AdjustmentFormInner() {
   const [soId, setSoId] = useState(initialSo);
   const [keterangan, setKeterangan] = useState(existing?.keterangan ?? "");
   const [status, setStatus] = useState(existing?.status ?? "draft");
+  const [fotoBukti, setFotoBukti] = useState<UploadedFile[]>(
+    (existing?.fotoBukti ?? []).map((dataUrl, i) => ({
+      id: `foto-${i}`,
+      name: `bukti-${i + 1}.jpg`,
+      dataUrl,
+    })),
+  );
 
   const selectedSo = stockOpnames.find((s) => s.id === soId);
+
+  const soSelectItems = useMemo(
+    () => stockOpnames.map((s) => ({ value: s.id, label: s.no })),
+    [stockOpnames],
+  );
 
   const [lines, setLines] = useState<AdjustmentLine[]>(() => {
     if (existing) return existing.lines;
@@ -97,6 +130,7 @@ function AdjustmentFormInner() {
       lines,
       status: nextStatus,
       keterangan,
+      fotoBukti: fotoBukti.map((f) => f.dataUrl),
       createdAt: existing?.createdAt ?? new Date().toISOString(),
       approvedBy:
         nextStatus === "disetujui" || nextStatus === "ditolak"
@@ -116,22 +150,23 @@ function AdjustmentFormInner() {
   }
 
   function approve(ok: boolean) {
-    if (user?.role !== "admin") {
-      toast.error("Hanya Admin yang dapat approve");
+    if (!canApprove) {
+      toast.error("Hanya Super Admin yang dapat approve");
       return;
     }
     if (!existing) return;
     const payload: Adjustment = {
       ...existing,
       status: ok ? "disetujui" : "ditolak",
-      approvedBy: user.nama,
+      approvedBy: user?.nama,
+      fotoBukti: fotoBukti.map((f) => f.dataUrl),
     };
     upsert(payload);
     setStatus(payload.status);
     addLog({
       waktu: new Date().toISOString(),
-      userId: user.id,
-      userNama: user.nama,
+      userId: user?.id ?? "local",
+      userNama: user?.nama ?? "User",
       aksi: ok ? "Approve Adjustment" : "Tolak Adjustment",
       detail: payload.no,
     });
@@ -143,14 +178,12 @@ function AdjustmentFormInner() {
       <BackLink href="/transaksi/adjustment" />
       <PageHeader
         title={isNew ? "Buat Adjustment" : `Adjustment ${existing?.no}`}
-        description="Merujuk No. Stock Opname. Approval khusus Admin."
-        action={
-          !isNew ? <StatusBadge status={status} /> : null
-        }
+        description="Menyamakan stok hasil stock opname. Persetujuan hanya oleh Super Admin."
+        action={!isNew ? <StatusBadge status={status} /> : null}
       />
 
       <div className="mb-4 grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-3">
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <Label>Tanggal</Label>
           <Input
             type="date"
@@ -159,14 +192,17 @@ function AdjustmentFormInner() {
             onChange={(e) => setTanggal(e.target.value)}
           />
         </div>
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <Label>No. Stock Opname</Label>
           <Select
             value={soId}
-            onValueChange={(v) => { if (v) loadFromSo(v); }}
+            onValueChange={(v) => {
+              if (v) loadFromSo(v);
+            }}
             disabled={readOnly}
+            items={soSelectItems}
           >
-            <SelectTrigger>
+            <SelectTrigger disabled={readOnly}>
               <SelectValue placeholder="Pilih SO" />
             </SelectTrigger>
             <SelectContent>
@@ -178,7 +214,7 @@ function AdjustmentFormInner() {
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <Label>Keterangan</Label>
           <Input
             value={keterangan}
@@ -192,33 +228,98 @@ function AdjustmentFormInner() {
         <CardHeader>
           <CardTitle className="text-base">Baris Adjustment</CardTitle>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <CardContent className="overflow-x-auto space-y-3">
+          <table className={tableShellClass}>
+            <colgroup>
+              {colGroupAdjustmentLines.map((width, index) => (
+                <col key={index} className={width} />
+              ))}
+            </colgroup>
             <thead>
-              <tr className="border-b text-left text-muted-foreground">
-                <th className="pb-2 font-medium">Jenis</th>
-                <th className="pb-2 font-medium">Kode</th>
-                <th className="pb-2 font-medium">Nama</th>
-                <th className="pb-2 text-right font-medium">Qty</th>
-                <th className="pb-2 text-right font-medium">Out</th>
-                <th className="pb-2 text-right font-medium">In</th>
-                <th className="pb-2 font-medium">Keterangan</th>
+              <tr className="border-b bg-muted/30">
+                <th className={tableHeadCellClass}>Jenis</th>
+                <th className={tableHeadCellClass}>Kode</th>
+                <th className={tableHeadCellClass}>Nama</th>
+                <th className={tableHeadCellRightClass}>Qty</th>
+                <th className={tableHeadCellRightClass}>Out</th>
+                <th className={tableHeadCellRightClass}>In</th>
+                <th className={tableHeadCellClass}>Keterangan</th>
               </tr>
             </thead>
             <tbody>
               {lines.map((l, idx) => (
-                <tr key={idx} className="border-b">
-                  <td className="py-2 uppercase">{l.jenis}</td>
-                  <td className="py-2 font-medium">{l.kode}</td>
-                  <td className="py-2">{l.nama}</td>
-                  <td className="py-2 text-right">{l.qty}</td>
-                  <td className="py-2 text-right">{l.out}</td>
-                  <td className="py-2 text-right">{l.in}</td>
-                  <td className="py-2">{l.keterangan}</td>
+                <tr key={idx} className="border-b last:border-0">
+                  <td className={tableBodyCellClass}>
+                    {formatJenisBarang(l.jenis)}
+                  </td>
+                  <td className={tableBodyCellClass}>{l.kode}</td>
+                  <td className={`${tableBodyCellClass} whitespace-normal`}>
+                    {l.nama}
+                  </td>
+                  <td className={tableBodyCellRightClass}>{l.qty}</td>
+                  <td
+                    className={cn(
+                      tableBodyCellRightClass,
+                      l.out > 0 && "text-red-700",
+                    )}
+                  >
+                    {l.out}
+                  </td>
+                  <td
+                    className={cn(
+                      tableBodyCellRightClass,
+                      l["in"] > 0 && "text-emerald-700",
+                    )}
+                  >
+                    {l["in"]}
+                  </td>
+                  <td className={`${tableBodyCellClass} whitespace-normal`}>
+                    {l.keterangan}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+
+          <div className="space-y-2 rounded-lg border border-dashed bg-muted/20 p-3">
+            <p className="text-xs text-muted-foreground">
+              Ringkasan arah stok per baris
+            </p>
+            <ul className="space-y-1.5 text-sm">
+              {lines.map((l, idx) => (
+                <li key={idx} className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="text-slate-800">
+                    {l.kode} - {l.nama}:
+                  </span>
+                  <span
+                    className={cn(
+                      l.in > 0 && l.out === 0 && "text-emerald-700",
+                      l.out > 0 && l.in === 0 && "text-red-700",
+                    )}
+                  >
+                    {movementLabel(l)}
+                    {l.out > 0 ? ` (Out ${l.out})` : ""}
+                    {l.in > 0 ? ` (In ${l.in})` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-4 border-border/80 bg-white shadow-none">
+        <CardHeader>
+          <CardTitle className="text-base">Foto Bukti Alasan</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <FileUpload
+            label="Bukti alasan adjustment"
+            hint="Unggah foto pendukung (mis. hasil hitung fisik)."
+            files={fotoBukti}
+            onChange={setFotoBukti}
+            disabled={readOnly && status !== "draft"}
+          />
         </CardContent>
       </Card>
 
@@ -238,21 +339,21 @@ function AdjustmentFormInner() {
 
       {!isNew && existing?.status === "menunggu_approval" && (
         <div className="flex flex-wrap gap-2">
-          {user?.role === "admin" ? (
+          {canApprove ? (
             <>
               <Button
                 className="bg-emerald-700 hover:bg-emerald-800"
                 onClick={() => approve(true)}
               >
-                Setujui
+                Approve
               </Button>
               <Button variant="destructive" onClick={() => approve(false)}>
-                Tolak
+                Reject
               </Button>
             </>
           ) : (
             <p className="text-sm text-amber-700">
-              Menunggu Admin. Toggle role di sidebar untuk demo approval.
+              Menunggu Super Admin. Ganti role di sidebar untuk demo approval.
             </p>
           )}
         </div>

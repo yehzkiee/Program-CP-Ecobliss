@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, formatStatusLabel } from "@/lib/utils";
 
 export function PageHeader({
   title,
@@ -47,14 +47,6 @@ export function StatusBadge({
     disetujui: "bg-emerald-100 text-emerald-800",
     ditolak: "bg-red-100 text-red-800",
   };
-  const label: Record<string, string> = {
-    aktif: "Aktif",
-    nonaktif: "Nonaktif",
-    draft: "Draft",
-    menunggu_approval: "Menunggu Approval",
-    disetujui: "Disetujui",
-    ditolak: "Ditolak",
-  };
   return (
     <span
       className={cn(
@@ -62,12 +54,18 @@ export function StatusBadge({
         map[status] ?? "bg-slate-100 text-slate-700",
       )}
     >
-      {label[status] ?? status}
+      {formatStatusLabel(status)}
     </span>
   );
 }
 
-export function BackLink({ href, label = "Kembali" }: { href: string; label?: string }) {
+export function BackLink({
+  href,
+  label = "Kembali",
+}: {
+  href: string;
+  label?: string;
+}) {
   return (
     <Button asChild variant="ghost" size="sm" className="-ml-2 mb-2">
       <Link href={href}>{label}</Link>

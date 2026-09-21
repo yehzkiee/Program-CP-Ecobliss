@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { PageHeader, StatusBadge } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -29,8 +30,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useDataStore } from "@/lib/store";
-import type { MaterialItem, StatusAktif } from "@/lib/types";
+import type { Customer, MaterialItem, StatusAktif } from "@/lib/types";
 import { uid } from "@/lib/utils";
+
+const UOM_OPTIONS = ["LBR", "KG", "M", "PCS", "BOX", "ROLL", "SET"] as const;
 
 const blank = (): MaterialItem => ({
   id: "",
@@ -44,12 +47,38 @@ const blank = (): MaterialItem => ({
   status: "aktif",
 });
 
+function customerInitials(nama: string): string {
+  const cleaned = nama.replace(/^(PT|CV|UD)\.?\s+/i, "").trim();
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "XX";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function generateBatchCustomer(
+  customerId: string,
+  customers: Customer[],
+  items: MaterialItem[],
+  excludeItemId?: string,
+): string {
+  const customer = customers.find((c) => c.id === customerId);
+  const initials = customerInitials(customer?.nama ?? "XX");
+  const prefix = `BC-${initials}-`;
+  const seqs = items
+    .filter((i) => i.customerId === customerId && i.id !== excludeItemId)
+    .map((i) => {
+      const match = i.batchCustomer.match(/-(\d+)$/);
+      return match ? Number(match[1]) : 0;
+    });
+  const next = (seqs.length ? Math.max(...seqs) : 0) + 1;
+  return `${prefix}${String(next).padStart(2, "0")}`;
+}
+
 export default function ItemPage() {
   const items = useDataStore((s) => s.items);
   const customers = useDataStore((s) => s.customers);
   const upsert = useDataStore((s) => s.upsertItem);
-  const remove = useDataStore((s) => s.deleteItem);
-  const [q, setQ] = useState("");
+  const [filterItem, setFilterItem] = useState("all");
   const [filterCust, setFilterCust] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [open, setOpen] = useState(false);
@@ -60,19 +89,70 @@ export default function ItemPage() {
     [customers],
   );
 
+  const fallbackCustomerId = customers[0]?.id ?? "";
+  const fallbackCustomerNama = customers[0]?.nama ?? "PT Sinar Abadi";
+
+  useEffect(() => {
+    if (!fallbackCustomerId) return;
+    for (const item of items) {
+      if (!item.customerId || !custMap[item.customerId]) {
+        upsert({ ...item, customerId: fallbackCustomerId });
+      }
+    }
+  }, [items, custMap, fallbackCustomerId, upsert]);
+
+  function resolveCustomerNama(customerId: string) {
+    const nama = custMap[customerId]?.nama?.trim();
+    return nama || fallbackCustomerNama;
+  }
+
   const filtered = useMemo(() => {
     return items.filter((i) => {
-      const matchQ =
-        i.kode.toLowerCase().includes(q.toLowerCase()) ||
-        i.nama.toLowerCase().includes(q.toLowerCase());
+      const matchItem = filterItem === "all" || i.id === filterItem;
       const matchCust = filterCust === "all" || i.customerId === filterCust;
       const matchStatus = filterStatus === "all" || i.status === filterStatus;
-      return matchQ && matchCust && matchStatus;
+      return matchItem && matchCust && matchStatus;
     });
-  }, [items, q, filterCust, filterStatus]);
+  }, [items, filterItem, filterCust, filterStatus]);
+
+  const itemFilterItems = useMemo(
+    () => [
+      { value: "all", label: "Semua Material" },
+      ...items.map((i) => ({
+        value: i.id,
+        label: `${i.kode} - ${i.nama}`,
+      })),
+    ],
+    [items],
+  );
+
+  const customerFilterItems = useMemo(
+    () => [
+      { value: "all", label: "Semua Customer" },
+      ...customers.map((c) => ({ value: c.id, label: c.nama })),
+    ],
+    [customers],
+  );
+
+  const statusFilterItems = useMemo(
+    () => [
+      { value: "all", label: "Semua Status" },
+      { value: "aktif", label: "Aktif" },
+      { value: "nonaktif", label: "Nonaktif" },
+    ],
+    [],
+  );
 
   function openCreate() {
-    setForm({ ...blank(), id: uid("item"), customerId: customers[0]?.id ?? "" });
+    const customerId = fallbackCustomerId;
+    setForm({
+      ...blank(),
+      id: uid("item"),
+      customerId,
+      batchCustomer: customerId
+        ? generateBatchCustomer(customerId, customers, items)
+        : "",
+    });
     setOpen(true);
   }
 
@@ -81,7 +161,10 @@ export default function ItemPage() {
       toast.error("Lengkapi kode, nama, dan customer");
       return;
     }
-    upsert(form);
+    const batchCustomer =
+      form.batchCustomer ||
+      generateBatchCustomer(form.customerId, customers, items);
+    upsert({ ...form, batchCustomer });
     toast.success("Material disimpan");
     setOpen(false);
   }
@@ -99,13 +182,28 @@ export default function ItemPage() {
       />
 
       <div className="mb-4 flex flex-col gap-2 sm:flex-row">
-        <Input
-          placeholder="Cari kode / nama..."
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          className="max-w-sm bg-white"
-        />
-        <Select value={filterCust} onValueChange={(v) => setFilterCust(v ?? "")}>
+        <Select
+          value={filterItem}
+          onValueChange={(v) => setFilterItem(v ?? "all")}
+          items={itemFilterItems}
+        >
+          <SelectTrigger className="w-full max-w-sm bg-white">
+            <SelectValue placeholder="Pilih Material..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Semua Material</SelectItem>
+            {items.map((i) => (
+              <SelectItem key={i.id} value={i.id}>
+                {i.kode} - {i.nama}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={filterCust}
+          onValueChange={(v) => setFilterCust(v ?? "all")}
+          items={customerFilterItems}
+        >
           <SelectTrigger className="w-full bg-white sm:w-48">
             <SelectValue placeholder="Customer" />
           </SelectTrigger>
@@ -118,7 +216,11 @@ export default function ItemPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v ?? "")}>
+        <Select
+          value={filterStatus}
+          onValueChange={(v) => setFilterStatus(v ?? "all")}
+          items={statusFilterItems}
+        >
           <SelectTrigger className="w-full bg-white sm:w-40">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
@@ -137,48 +239,37 @@ export default function ItemPage() {
               <TableHead>Kode</TableHead>
               <TableHead>Nama</TableHead>
               <TableHead>Customer</TableHead>
-              <TableHead>Kategori</TableHead>
               <TableHead>UOM</TableHead>
               <TableHead>Konversi</TableHead>
-              <TableHead>Batch Cust</TableHead>
+              <TableHead>Batch Customer</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="text-right">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.map((i) => (
               <TableRow key={i.id}>
-                <TableCell className="font-medium">{i.kode}</TableCell>
+                <TableCell>
+                  <Link
+                    href={`/master/item/${i.id}`}
+                    className="text-emerald-800 hover:underline"
+                  >
+                    {i.kode}
+                  </Link>
+                </TableCell>
                 <TableCell>{i.nama}</TableCell>
-                <TableCell>{custMap[i.customerId]?.nama ?? "-"}</TableCell>
-                <TableCell>{i.kategori}</TableCell>
+                <TableCell>
+                  <Link
+                    href={`/master/customer/${i.customerId}`}
+                    className="text-emerald-800 hover:underline"
+                  >
+                    {resolveCustomerNama(i.customerId)}
+                  </Link>
+                </TableCell>
                 <TableCell>{i.uom}</TableCell>
                 <TableCell>{i.konversi}</TableCell>
-                <TableCell>{i.batchCustomer}</TableCell>
+                <TableCell>{i.batchCustomer || "-"}</TableCell>
                 <TableCell>
                   <StatusBadge status={i.status} />
-                </TableCell>
-                <TableCell className="space-x-2 text-right">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setForm(i);
-                      setOpen(true);
-                    }}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      remove(i.id);
-                      toast.success("Item dihapus");
-                    }}
-                  >
-                    Hapus
-                  </Button>
                 </TableCell>
               </TableRow>
             ))}
@@ -189,9 +280,7 @@ export default function ItemPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>
-              {items.some((i) => i.id === form.id) ? "Edit" : "Tambah"} Material
-            </DialogTitle>
+            <DialogTitle>Tambah Material</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
@@ -211,8 +300,18 @@ export default function ItemPage() {
             <div className="space-y-2">
               <Label>Customer</Label>
               <Select
-                value={form.customerId}
-                onValueChange={(v) => setForm({ ...form, customerId: v ?? "" })}
+                value={form.customerId || fallbackCustomerId}
+                onValueChange={(v) => {
+                  const customerId = v ?? "";
+                  setForm({
+                    ...form,
+                    customerId,
+                    batchCustomer: customerId
+                      ? generateBatchCustomer(customerId, customers, items)
+                      : "",
+                  });
+                }}
+                items={customers.map((c) => ({ value: c.id, label: c.nama }))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih" />
@@ -227,18 +326,23 @@ export default function ItemPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Kategori</Label>
-              <Input
-                value={form.kategori}
-                onChange={(e) => setForm({ ...form, kategori: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
               <Label>UOM</Label>
-              <Input
+              <Select
                 value={form.uom}
-                onChange={(e) => setForm({ ...form, uom: e.target.value })}
-              />
+                onValueChange={(v) => setForm({ ...form, uom: v ?? "PCS" })}
+                items={UOM_OPTIONS.map((u) => ({ value: u, label: u }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih UOM" />
+                </SelectTrigger>
+                <SelectContent>
+                  {UOM_OPTIONS.map((u) => (
+                    <SelectItem key={u} value={u}>
+                      {u}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Konversi</Label>
@@ -252,12 +356,9 @@ export default function ItemPage() {
             </div>
             <div className="space-y-2">
               <Label>Batch Customer</Label>
-              <Input
-                value={form.batchCustomer}
-                onChange={(e) =>
-                  setForm({ ...form, batchCustomer: e.target.value })
-                }
-              />
+              <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                {form.batchCustomer || "-"}
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Status</Label>
@@ -266,6 +367,10 @@ export default function ItemPage() {
                 onValueChange={(v) =>
                   setForm({ ...form, status: v as StatusAktif })
                 }
+                items={[
+                  { value: "aktif", label: "Aktif" },
+                  { value: "nonaktif", label: "Nonaktif" },
+                ]}
               >
                 <SelectTrigger>
                   <SelectValue />

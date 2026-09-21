@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { PageHeader, StatusBadge } from "@/components/shared/page-header";
+import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +14,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -29,30 +37,49 @@ const empty: Customer = { id: "", kode: "", nama: "" };
 
 export default function CustomerPage() {
   const customers = useDataStore((s) => s.customers);
+  const items = useDataStore((s) => s.items);
+  const finishGoods = useDataStore((s) => s.finishGoods);
   const upsert = useDataStore((s) => s.upsertCustomer);
-  const remove = useDataStore((s) => s.deleteCustomer);
   const addLog = useDataStore((s) => s.addLog);
-  const [q, setQ] = useState("");
+  const [filterCust, setFilterCust] = useState("all");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Customer>(empty);
 
+  const counts = useMemo(() => {
+    const map = new Map<
+      string,
+      { materials: number; finishGoods: number }
+    >();
+    for (const c of customers) {
+      map.set(c.id, { materials: 0, finishGoods: 0 });
+    }
+    for (const i of items) {
+      const row = map.get(i.customerId);
+      if (row) row.materials += 1;
+    }
+    for (const f of finishGoods) {
+      const row = map.get(f.customerId);
+      if (row) row.finishGoods += 1;
+    }
+    return map;
+  }, [customers, items, finishGoods]);
+
   const filtered = useMemo(
     () =>
-      customers.filter(
-        (c) =>
-          c.kode.toLowerCase().includes(q.toLowerCase()) ||
-          c.nama.toLowerCase().includes(q.toLowerCase()),
-      ),
-    [customers, q],
+      customers.filter((c) => filterCust === "all" || c.id === filterCust),
+    [customers, filterCust],
+  );
+
+  const filterItems = useMemo(
+    () => [
+      { value: "all", label: "Semua Customer" },
+      ...customers.map((c) => ({ value: c.id, label: c.nama })),
+    ],
+    [customers],
   );
 
   function openCreate() {
     setForm({ ...empty, id: uid("cust") });
-    setOpen(true);
-  }
-
-  function openEdit(c: Customer) {
-    setForm(c);
     setOpen(true);
   }
 
@@ -86,45 +113,58 @@ export default function CustomerPage() {
       />
 
       <div className="mb-4">
-        <Input
-          placeholder="Cari kode / nama..."
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          className="max-w-sm bg-white"
-        />
+        <Select
+          value={filterCust}
+          onValueChange={(v) => setFilterCust(v ?? "all")}
+          items={filterItems}
+        >
+          <SelectTrigger className="w-full max-w-sm bg-white">
+            <SelectValue placeholder="Pilih Customer..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Semua Customer</SelectItem>
+            {customers.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.nama}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border/80 bg-white">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Kode Customer</TableHead>
               <TableHead>Nama Customer</TableHead>
-              <TableHead className="text-right">Aksi</TableHead>
+              <TableHead>Kode Customer</TableHead>
+              <TableHead className="text-right">Material</TableHead>
+              <TableHead className="text-right">Finish Good</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((c) => (
-              <TableRow key={c.id}>
-                <TableCell className="font-medium">{c.kode}</TableCell>
-                <TableCell>{c.nama}</TableCell>
-                <TableCell className="space-x-2 text-right">
-                  <Button variant="outline" size="sm" onClick={() => openEdit(c)}>
-                    Edit
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      remove(c.id);
-                      toast.success("Customer dihapus");
-                    }}
-                  >
-                    Hapus
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
+            {filtered.map((c) => {
+              const ccount = counts.get(c.id);
+              return (
+                <TableRow key={c.id}>
+                  <TableCell className="font-medium">
+                    <Link
+                      href={`/master/customer/${c.id}`}
+                      className="text-emerald-800 hover:underline"
+                    >
+                      {c.nama}
+                    </Link>
+                  </TableCell>
+                  <TableCell>{c.kode}</TableCell>
+                  <TableCell className="text-right">
+                    {ccount?.materials ?? 0}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {ccount?.finishGoods ?? 0}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>
@@ -132,9 +172,7 @@ export default function CustomerPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {customers.some((c) => c.id === form.id) ? "Edit" : "Tambah"} Customer
-            </DialogTitle>
+            <DialogTitle>Tambah Customer</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-2">

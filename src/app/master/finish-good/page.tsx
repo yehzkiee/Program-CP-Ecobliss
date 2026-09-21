@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { PageHeader, StatusBadge } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -29,8 +30,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useDataStore } from "@/lib/store";
-import type { FinishGood, StatusAktif } from "@/lib/types";
+import type { Customer, FinishGood, StatusAktif } from "@/lib/types";
 import { uid } from "@/lib/utils";
+
+const UOM_OPTIONS = ["PCS", "BOX", "SET", "PACK", "ROLL"] as const;
 
 const blank = (): FinishGood => ({
   id: "",
@@ -44,11 +47,37 @@ const blank = (): FinishGood => ({
   status: "aktif",
 });
 
+function customerInitials(nama: string): string {
+  const cleaned = nama.replace(/^(PT|CV|UD)\.?\s+/i, "").trim();
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "XX";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function generateBatchCustomer(
+  customerId: string,
+  customers: Customer[],
+  finishGoods: FinishGood[],
+  excludeId?: string,
+): string {
+  const customer = customers.find((c) => c.id === customerId);
+  const initials = customerInitials(customer?.nama ?? "XX");
+  const prefix = `BC-${initials}-FG`;
+  const seqs = finishGoods
+    .filter((f) => f.customerId === customerId && f.id !== excludeId)
+    .map((f) => {
+      const match = f.batchCustomer.match(/FG(\d+)$/i);
+      return match ? Number(match[1]) : 0;
+    });
+  const next = (seqs.length ? Math.max(...seqs) : 0) + 1;
+  return `${prefix}${String(next).padStart(2, "0")}`;
+}
+
 export default function FinishGoodPage() {
   const finishGoods = useDataStore((s) => s.finishGoods);
   const customers = useDataStore((s) => s.customers);
   const upsert = useDataStore((s) => s.upsertFg);
-  const remove = useDataStore((s) => s.deleteFg);
   const [q, setQ] = useState("");
   const [filterCust, setFilterCust] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -59,6 +88,23 @@ export default function FinishGoodPage() {
     () => Object.fromEntries(customers.map((c) => [c.id, c])),
     [customers],
   );
+
+  const fallbackCustomerId = customers[0]?.id ?? "";
+  const fallbackCustomerNama = customers[0]?.nama ?? "PT Sinar Abadi";
+
+  useEffect(() => {
+    if (!fallbackCustomerId) return;
+    for (const fg of finishGoods) {
+      if (!fg.customerId || !custMap[fg.customerId]) {
+        upsert({ ...fg, customerId: fallbackCustomerId });
+      }
+    }
+  }, [finishGoods, custMap, fallbackCustomerId, upsert]);
+
+  function resolveCustomerNama(customerId: string) {
+    const nama = custMap[customerId]?.nama?.trim();
+    return nama || fallbackCustomerNama;
+  }
 
   const filtered = useMemo(() => {
     return finishGoods.filter((i) => {
@@ -71,11 +117,32 @@ export default function FinishGoodPage() {
     });
   }, [finishGoods, q, filterCust, filterStatus]);
 
+  const customerFilterItems = useMemo(
+    () => [
+      { value: "all", label: "Semua Customer" },
+      ...customers.map((c) => ({ value: c.id, label: c.nama })),
+    ],
+    [customers],
+  );
+
+  const statusFilterItems = useMemo(
+    () => [
+      { value: "all", label: "Semua Status" },
+      { value: "aktif", label: "Aktif" },
+      { value: "nonaktif", label: "Nonaktif" },
+    ],
+    [],
+  );
+
   function openCreate() {
+    const customerId = fallbackCustomerId;
     setForm({
       ...blank(),
       id: uid("fg"),
-      customerId: customers[0]?.id ?? "",
+      customerId,
+      batchCustomer: customerId
+        ? generateBatchCustomer(customerId, customers, finishGoods)
+        : "",
     });
     setOpen(true);
   }
@@ -85,7 +152,10 @@ export default function FinishGoodPage() {
       toast.error("Lengkapi kode, nama, dan customer");
       return;
     }
-    upsert(form);
+    const batchCustomer =
+      form.batchCustomer ||
+      generateBatchCustomer(form.customerId, customers, finishGoods);
+    upsert({ ...form, batchCustomer });
     toast.success("Finish Good disimpan");
     setOpen(false);
   }
@@ -109,7 +179,11 @@ export default function FinishGoodPage() {
           onChange={(e) => setQ(e.target.value)}
           className="max-w-sm bg-white"
         />
-        <Select value={filterCust} onValueChange={(v) => setFilterCust(v ?? "")}>
+        <Select
+          value={filterCust}
+          onValueChange={(v) => setFilterCust(v ?? "all")}
+          items={customerFilterItems}
+        >
           <SelectTrigger className="w-full bg-white sm:w-48">
             <SelectValue placeholder="Customer" />
           </SelectTrigger>
@@ -122,7 +196,11 @@ export default function FinishGoodPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v ?? "")}>
+        <Select
+          value={filterStatus}
+          onValueChange={(v) => setFilterStatus(v ?? "all")}
+          items={statusFilterItems}
+        >
           <SelectTrigger className="w-full bg-white sm:w-40">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
@@ -141,48 +219,30 @@ export default function FinishGoodPage() {
               <TableHead>Kode FG</TableHead>
               <TableHead>Nama FG</TableHead>
               <TableHead>Customer</TableHead>
-              <TableHead>Kategori</TableHead>
-              <TableHead>Batch Cust</TableHead>
+              <TableHead>Batch Customer</TableHead>
               <TableHead>UOM</TableHead>
               <TableHead>Konversi</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="text-right">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.map((i) => (
               <TableRow key={i.id}>
-                <TableCell className="font-medium">{i.kode}</TableCell>
+                <TableCell>
+                  <Link
+                    href={`/master/finish-good/${i.id}`}
+                    className="text-emerald-800 hover:underline"
+                  >
+                    {i.kode}
+                  </Link>
+                </TableCell>
                 <TableCell>{i.nama}</TableCell>
-                <TableCell>{custMap[i.customerId]?.nama ?? "-"}</TableCell>
-                <TableCell>{i.kategori}</TableCell>
+                <TableCell>{resolveCustomerNama(i.customerId)}</TableCell>
                 <TableCell>{i.batchCustomer}</TableCell>
                 <TableCell>{i.uom}</TableCell>
                 <TableCell>{i.konversi}</TableCell>
                 <TableCell>
                   <StatusBadge status={i.status} />
-                </TableCell>
-                <TableCell className="space-x-2 text-right">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setForm(i);
-                      setOpen(true);
-                    }}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      remove(i.id);
-                      toast.success("FG dihapus");
-                    }}
-                  >
-                    Hapus
-                  </Button>
                 </TableCell>
               </TableRow>
             ))}
@@ -193,9 +253,7 @@ export default function FinishGoodPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>
-              {finishGoods.some((i) => i.id === form.id) ? "Edit" : "Tambah"} Finish Good
-            </DialogTitle>
+            <DialogTitle>Tambah Finish Good</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
@@ -215,8 +273,22 @@ export default function FinishGoodPage() {
             <div className="space-y-2">
               <Label>Customer</Label>
               <Select
-                value={form.customerId}
-                onValueChange={(v) => setForm({ ...form, customerId: v ?? "" })}
+                value={form.customerId || fallbackCustomerId}
+                onValueChange={(v) => {
+                  const customerId = v ?? "";
+                  setForm({
+                    ...form,
+                    customerId,
+                    batchCustomer: customerId
+                      ? generateBatchCustomer(
+                          customerId,
+                          customers,
+                          finishGoods,
+                        )
+                      : "",
+                  });
+                }}
+                items={customers.map((c) => ({ value: c.id, label: c.nama }))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih" />
@@ -231,27 +303,29 @@ export default function FinishGoodPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Kategori</Label>
-              <Input
-                value={form.kategori}
-                onChange={(e) => setForm({ ...form, kategori: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
               <Label>Batch Customer</Label>
-              <Input
-                value={form.batchCustomer}
-                onChange={(e) =>
-                  setForm({ ...form, batchCustomer: e.target.value })
-                }
-              />
+              <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                {form.batchCustomer || "-"}
+              </p>
             </div>
             <div className="space-y-2">
               <Label>UOM</Label>
-              <Input
+              <Select
                 value={form.uom}
-                onChange={(e) => setForm({ ...form, uom: e.target.value })}
-              />
+                onValueChange={(v) => setForm({ ...form, uom: v ?? "PCS" })}
+                items={UOM_OPTIONS.map((u) => ({ value: u, label: u }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih UOM" />
+                </SelectTrigger>
+                <SelectContent>
+                  {UOM_OPTIONS.map((u) => (
+                    <SelectItem key={u} value={u}>
+                      {u}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Konversi</Label>
@@ -270,6 +344,10 @@ export default function FinishGoodPage() {
                 onValueChange={(v) =>
                   setForm({ ...form, status: v as StatusAktif })
                 }
+                items={[
+                  { value: "aktif", label: "Aktif" },
+                  { value: "nonaktif", label: "Nonaktif" },
+                ]}
               >
                 <SelectTrigger>
                   <SelectValue />

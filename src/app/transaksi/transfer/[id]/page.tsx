@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import { BackLink, PageHeader } from "@/components/shared/page-header";
+import { DetailField } from "@/components/shared/detail-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +20,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDocNo } from "@/lib/mock/data";
 import { useAuthStore, useDataStore } from "@/lib/store";
 import type { TransferGudang, TransferLine } from "@/lib/types";
-import { todayISO, uid } from "@/lib/utils";
+import { todayISO, uid, formatDateID } from "@/lib/utils";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+
+type TransferSnapshot = {
+  tanggal: string;
+  keterangan: string;
+  lines: TransferLine[];
+};
+
+function cloneLines(lines: TransferLine[]) {
+  return lines.map((l) => ({ ...l }));
+}
+
+const jenisLabel: Record<TransferLine["jenis"], string> = {
+  item: "Material Item",
+  fg: "Finish Good",
+};
 
 export default function TransferFormPage() {
   const params = useParams<{ id: string }>();
@@ -33,10 +50,37 @@ export default function TransferFormPage() {
   const addLog = useDataStore((s) => s.addLog);
   const user = useAuthStore((s) => s.currentUser);
   const existing = transfers.find((t) => t.id === params.id);
-  const readOnly = !isNew;
+  const { askConfirm, confirmDialog } = useConfirmDialog();
+
+  const [editing, setEditing] = useState(false);
+  const [baseline, setBaseline] = useState<TransferSnapshot | null>(null);
+
+  const isViewMode = !isNew && !editing;
+  const canEdit = isNew || editing;
 
   const gudangMap = useMemo(
     () => Object.fromEntries(gudangList.map((g) => [g.id, g])),
+    [gudangList],
+  );
+
+  const jenisSelectItems = useMemo(
+    () => [
+      { value: "item", label: "Material Item" },
+      { value: "fg", label: "Finish Good" },
+    ],
+    [],
+  );
+  const itemSelectItems = useMemo(
+    () => items.map((i) => ({ value: i.id, label: `${i.kode} - ${i.nama}` })),
+    [items],
+  );
+  const fgSelectItems = useMemo(
+    () =>
+      finishGoods.map((f) => ({ value: f.id, label: `${f.kode} - ${f.nama}` })),
+    [finishGoods],
+  );
+  const gudangSelectItems = useMemo(
+    () => gudangList.map((g) => ({ value: g.id, label: g.nama })),
     [gudangList],
   );
 
@@ -57,6 +101,34 @@ export default function TransferFormPage() {
     ],
   );
 
+  function currentSnapshot(): TransferSnapshot {
+    return { tanggal, keterangan, lines: cloneLines(lines) };
+  }
+
+  function applySnapshot(snap: TransferSnapshot) {
+    setTanggal(snap.tanggal);
+    setKeterangan(snap.keterangan);
+    setLines(cloneLines(snap.lines));
+  }
+
+  function startEdit() {
+    setBaseline(currentSnapshot());
+    setEditing(true);
+  }
+
+  function cancelEdit() {
+    if (baseline) applySnapshot(baseline);
+    else if (existing) {
+      applySnapshot({
+        tanggal: existing.tanggal,
+        keterangan: existing.keterangan,
+        lines: cloneLines(existing.lines),
+      });
+    }
+    setBaseline(null);
+    setEditing(false);
+  }
+
   function save() {
     const payload: TransferGudang = {
       id: existing?.id ?? uid("tf"),
@@ -75,41 +147,75 @@ export default function TransferFormPage() {
       detail: payload.no,
     });
     toast.success("Transfer disimpan");
+    setBaseline(null);
+    setEditing(false);
     router.push(`/transaksi/transfer/${payload.id}`);
   }
 
   return (
     <div>
+      {confirmDialog}
       <BackLink href="/transaksi/transfer" />
       <PageHeader
         title={isNew ? "Buat Transfer" : `Transfer ${existing?.no}`}
-        description="Item dapat ditransfer ke gudang FG dan sebaliknya."
+        description={
+          isViewMode
+            ? "Detail pemindahan barang antar gudang. Setiap baris menjelaskan barang mana dipindah dari gudang asal ke gudang tujuan."
+            : "Isi baris transfer: pilih barang, qty, gudang asal, dan gudang tujuan. Contoh: Finish Good dipindah dari Gudang FG ke Gudang WIP (barang dalam proses)."
+        }
+        action={
+          isViewMode ? (
+            <Button
+              className="bg-emerald-700 hover:bg-emerald-800"
+              onClick={startEdit}
+            >
+              Edit
+            </Button>
+          ) : !isNew ? (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={cancelEdit}>
+                Batal
+              </Button>
+              <Button
+                className="bg-emerald-700 hover:bg-emerald-800"
+                onClick={save}
+              >
+                Simpan
+              </Button>
+            </div>
+          ) : undefined
+        }
       />
 
-      <div className="mb-4 grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label>Tanggal</Label>
-          <Input
-            type="date"
-            value={tanggal}
-            disabled={readOnly}
-            onChange={(e) => setTanggal(e.target.value)}
-          />
+      {isViewMode ? (
+        <div className="mb-4 grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-2">
+          <DetailField label="Tanggal" value={formatDateID(tanggal)} />
+          <DetailField label="Keterangan" value={keterangan} />
         </div>
-        <div className="space-y-2">
-          <Label>Keterangan</Label>
-          <Input
-            value={keterangan}
-            disabled={readOnly}
-            onChange={(e) => setKeterangan(e.target.value)}
-          />
+      ) : (
+        <div className="mb-4 grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Tanggal</Label>
+            <Input
+              type="date"
+              value={tanggal}
+              onChange={(e) => setTanggal(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Keterangan</Label>
+            <Input
+              value={keterangan}
+              onChange={(e) => setKeterangan(e.target.value)}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       <Card className="mb-4 border-border/80 bg-white shadow-none">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Baris Transfer</CardTitle>
-          {!readOnly && (
+          {canEdit && (
             <Button
               size="sm"
               variant="outline"
@@ -134,119 +240,129 @@ export default function TransferFormPage() {
           )}
         </CardHeader>
         <CardContent className="space-y-3">
-          {lines.map((line, idx) => (
-            <div
-              key={idx}
-              className="grid gap-2 rounded-lg border p-3 lg:grid-cols-6"
-            >
-              <div>
-                <Label className="text-xs">Jenis</Label>
-                <Select
-                  value={line.jenis}
-                  disabled={readOnly}
-                  onValueChange={(v) => { const vv = v ?? "";
-                    const jenis = vv as "item" | "fg";
-                    const ref = jenis === "item" ? items[0] : finishGoods[0];
-                    const next = [...lines];
-                    next[idx] = {
-                      ...line,
-                      jenis,
-                      refId: ref?.id ?? "",
-                      kode: ref?.kode ?? "",
-                      nama: ref?.nama ?? "",
-                    };
-                    setLines(next);}}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="item">Item</SelectItem>
-                    <SelectItem value="fg">FG</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="lg:col-span-2">
-                <Label className="text-xs">Barang</Label>
-                <Select
-                  value={line.refId}
-                  disabled={readOnly}
-                  onValueChange={(v) => { const vv = v ?? "";
-                    const ref =
-                      line.jenis === "item"
-                        ? items.find((i) => i.id === vv)
-                        : finishGoods.find((f) => f.id === vv);
-                    const next = [...lines];
-                    next[idx] = {
-                      ...line,
-                      refId: vv,
-                      kode: ref?.kode ?? "",
-                      nama: ref?.nama ?? "",
-                    };
-                    setLines(next);}}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(line.jenis === "item" ? items : finishGoods).map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        {r.kode} — {r.nama}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs">Qty</Label>
-                <Input
-                  type="number"
-                  value={line.qty}
-                  disabled={readOnly}
-                  onChange={(e) => {
-                    const next = [...lines];
-                    next[idx] = { ...line, qty: Number(e.target.value) || 0 };
-                    setLines(next);
-                  }}
+          {lines.map((line, idx) =>
+            isViewMode ? (
+              <div
+                key={idx}
+                className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-4"
+              >
+                <DetailField label="Jenis" value={jenisLabel[line.jenis]} />
+                <DetailField
+                  label="Barang"
+                  value={`${line.kode} - ${line.nama}`}
+                  className="sm:col-span-2 lg:col-span-1"
                 />
+                <DetailField label="Qty" value={line.qty} />
+                <DetailField
+                  label="Pemindahan"
+                  value={`${line.nama} dipindah dari ${gudangMap[line.dariGudangId]?.nama ?? "Gudang Asal"} ke ${gudangMap[line.keGudangId]?.nama ?? "Gudang Tujuan"}`}
+                  className="sm:col-span-2 lg:col-span-4"
+                />
+                {line.keterangan ? (
+                  <DetailField
+                    label="Keterangan"
+                    value={line.keterangan}
+                    className="sm:col-span-2 lg:col-span-4"
+                  />
+                ) : null}
               </div>
-              <div>
-                <Label className="text-xs">Dari</Label>
-                <Select
-                  value={line.dariGudangId}
-                  disabled={readOnly}
-                  onValueChange={(v) => { const vv = v ?? ""; 
-                    const next = [...lines];
-                    next[idx] = { ...line, dariGudangId: vv };
-                    setLines(next);
-                   }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {gudangList.map((g) => (
-                      <SelectItem key={g.id} value={g.id}>
-                        {g.nama}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-end gap-2">
-                <div className="flex-1">
-                  <Label className="text-xs">Ke</Label>
+            ) : (
+              <div
+                key={idx}
+                className="grid gap-2 rounded-lg border p-3 lg:grid-cols-6"
+              >
+                <div>
+                  <Label className="text-xs">Jenis</Label>
                   <Select
-                    value={line.keGudangId}
-                    disabled={readOnly}
-                    onValueChange={(v) => { const vv = v ?? ""; 
+                    value={line.jenis}
+                    items={jenisSelectItems}
+                    onValueChange={(v) => {
+                      const vv = v ?? "";
+                      const jenis = vv as "item" | "fg";
+                      const ref = jenis === "item" ? items[0] : finishGoods[0];
                       const next = [...lines];
-                      next[idx] = { ...line, keGudangId: vv };
+                      next[idx] = {
+                        ...line,
+                        jenis,
+                        refId: ref?.id ?? "",
+                        kode: ref?.kode ?? "",
+                        nama: ref?.nama ?? "",
+                      };
                       setLines(next);
-                     }}
+                    }}
                   >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Pilih jenis" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="item">Material Item</SelectItem>
+                      <SelectItem value="fg">Finish Good</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="lg:col-span-2">
+                  <Label className="text-xs">Barang</Label>
+                  <Select
+                    value={line.refId}
+                    items={
+                      line.jenis === "item" ? itemSelectItems : fgSelectItems
+                    }
+                    onValueChange={(v) => {
+                      const vv = v ?? "";
+                      const ref =
+                        line.jenis === "item"
+                          ? items.find((i) => i.id === vv)
+                          : finishGoods.find((f) => f.id === vv);
+                      const next = [...lines];
+                      next[idx] = {
+                        ...line,
+                        refId: vv,
+                        kode: ref?.kode ?? "",
+                        nama: ref?.nama ?? "",
+                      };
+                      setLines(next);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih barang" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(line.jenis === "item" ? items : finishGoods).map(
+                        (r) => (
+                          <SelectItem key={r.id} value={r.id}>
+                            {r.kode} - {r.nama}
+                          </SelectItem>
+                        ),
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Qty</Label>
+                  <Input
+                    type="number"
+                    value={line.qty}
+                    onChange={(e) => {
+                      const next = [...lines];
+                      next[idx] = { ...line, qty: Number(e.target.value) || 0 };
+                      setLines(next);
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Gudang Asal</Label>
+                  <Select
+                    value={line.dariGudangId}
+                    items={gudangSelectItems}
+                    onValueChange={(v) => {
+                      const vv = v ?? "";
+                      const next = [...lines];
+                      next[idx] = { ...line, dariGudangId: vv };
+                      setLines(next);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Gudang asal" />
                     </SelectTrigger>
                     <SelectContent>
                       {gudangList.map((g) => (
@@ -257,24 +373,46 @@ export default function TransferFormPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                {!readOnly && (
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Label className="text-xs">Gudang Tujuan</Label>
+                    <Select
+                      value={line.keGudangId}
+                      items={gudangSelectItems}
+                      onValueChange={(v) => {
+                        const vv = v ?? "";
+                        const next = [...lines];
+                        next[idx] = { ...line, keGudangId: vv };
+                        setLines(next);
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih gudang tujuan" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {gudangList.map((g) => (
+                          <SelectItem key={g.id} value={g.id}>
+                            {g.nama}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => setLines(lines.filter((_, i) => i !== idx))}
+                    onClick={() => {
+                      askConfirm(() => {
+                        setLines(lines.filter((_, i) => i !== idx));
+                      });
+                    }}
                   >
                     <Trash2 className="size-4" />
                   </Button>
-                )}
+                </div>
               </div>
-              {readOnly && (
-                <p className="text-xs text-muted-foreground lg:col-span-6">
-                  {gudangMap[line.dariGudangId]?.nama} →{" "}
-                  {gudangMap[line.keGudangId]?.nama}
-                </p>
-              )}
-            </div>
-          ))}
+            ),
+          )}
         </CardContent>
       </Card>
 

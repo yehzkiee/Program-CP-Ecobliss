@@ -20,7 +20,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  SidebarNav,
+  SidebarNavItem,
+  SidebarSubnavLayout,
+} from "@/components/shared/sidebar-subnav-layout";
 import {
   Table,
   TableBody,
@@ -32,11 +36,20 @@ import {
 import { useDataStore } from "@/lib/store";
 import type { Gudang, JenisTransaksi, Role, User } from "@/lib/types";
 import { formatDateTimeID, uid } from "@/lib/utils";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+
+const settingTabs = [
+  { id: "users", label: "Users & Role", desc: "Akun dan hak akses" },
+  { id: "gudang", label: "Gudang", desc: "Lokasi penyimpanan" },
+  { id: "jenis", label: "Jenis Transaksi", desc: "Kategori BTB / BKB" },
+  { id: "log", label: "Activity Log", desc: "Riwayat aktivitas" },
+] as const;
 
 export default function SettingPage() {
   const users = useDataStore((s) => s.users);
   const gudangList = useDataStore((s) => s.gudangList);
   const jenisList = useDataStore((s) => s.jenisTransaksiList);
+  const { askConfirm, confirmDialog } = useConfirmDialog();
   const logs = useDataStore((s) => s.activityLogs);
   const upsertUser = useDataStore((s) => s.upsertUser);
   const upsertGudang = useDataStore((s) => s.upsertGudang);
@@ -45,6 +58,7 @@ export default function SettingPage() {
   const deleteJenis = useDataStore((s) => s.deleteJenis);
   const resetDemo = useDataStore((s) => s.resetDemo);
 
+  const [tab, setTab] = useState("users");
   const [userOpen, setUserOpen] = useState(false);
   const [userForm, setUserForm] = useState<User>({
     id: "",
@@ -70,8 +84,11 @@ export default function SettingPage() {
     untuk: "keduanya",
   });
 
+  const active = settingTabs.find((t) => t.id === tab);
+
   return (
     <div>
+      {confirmDialog}
       <PageHeader
         title="Setting & Hak Akses"
         description="User, role, gudang, jenis transaksi, dan log aktivitas (mock)."
@@ -88,237 +105,250 @@ export default function SettingPage() {
         }
       />
 
-      <Tabs defaultValue="users">
-        <TabsList className="mb-4 flex h-auto flex-wrap gap-1 bg-transparent p-0">
-          {[
-            ["users", "Users & Role"],
-            ["gudang", "Gudang"],
-            ["jenis", "Jenis Transaksi"],
-            ["log", "Activity Log"],
-          ].map(([v, label]) => (
-            <TabsTrigger
-              key={v}
-              value={v}
-              className="rounded-md border bg-white data-[state=active]:border-emerald-300 data-[state=active]:bg-emerald-50"
-            >
-              {label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+      <SidebarSubnavLayout
+        sidebar={
+          <SidebarNav>
+            {settingTabs.map((t) => (
+              <SidebarNavItem
+                key={t.id}
+                label={t.label}
+                description={t.desc}
+                active={tab === t.id}
+                onClick={() => setTab(t.id)}
+              />
+            ))}
+          </SidebarNav>
+        }
+      >
+        <h2 className="mb-4 text-base font-semibold text-slate-900">
+          {active?.label}
+        </h2>
 
-        <TabsContent value="users">
-          <div className="mb-3 flex justify-end">
-            <Button
-              className="bg-emerald-700 hover:bg-emerald-800"
-              onClick={() => {
-                setUserForm({
-                  id: uid("user"),
-                  username: "",
-                  nama: "",
-                  role: "user",
-                  password: "demo123",
-                });
-                setUserOpen(true);
-              }}
-            >
-              Tambah User
-            </Button>
-          </div>
-          <div className="overflow-x-auto rounded-xl border bg-white">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Username</TableHead>
-                  <TableHead>Nama</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead className="text-right">Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((u) => (
-                  <TableRow key={u.id}>
-                    <TableCell className="font-medium">{u.username}</TableCell>
-                    <TableCell>{u.nama}</TableCell>
-                    <TableCell>
-                      <StatusBadge
-                        status={u.role === "admin" ? "disetujui" : "draft"}
-                      />{" "}
-                      <span className="text-xs text-muted-foreground">
-                        {u.role === "admin" ? "Admin" : "Non-Admin"}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setUserForm(u);
-                          setUserOpen(true);
-                        }}
-                      >
-                        Edit
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          <p className="mt-3 text-xs text-muted-foreground">
-            Role Admin khusus untuk approval Adjustment. Demo: toggle role di
-            sidebar.
-          </p>
-        </TabsContent>
+        {tab === "users" && (
+          <>
+              <div className="mb-3 flex justify-end">
+                <Button
+                  className="bg-emerald-700 hover:bg-emerald-800"
+                  onClick={() => {
+                    setUserForm({
+                      id: uid("user"),
+                      username: "",
+                      nama: "",
+                      role: "user",
+                      password: "demo123",
+                    });
+                    setUserOpen(true);
+                  }}
+                >
+                  Tambah User
+                </Button>
+              </div>
+              <div className="overflow-x-auto rounded-xl border bg-white">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Username</TableHead>
+                      <TableHead>Nama</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead className="text-right" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {users.map((u) => (
+                      <TableRow key={u.id}>
+                        <TableCell className="font-medium">{u.username}</TableCell>
+                        <TableCell>{u.nama}</TableCell>
+                        <TableCell>
+                          <StatusBadge
+                            status={u.role === "admin" ? "disetujui" : "draft"}
+                          />{" "}
+                          <span className="text-xs text-muted-foreground">
+                            {u.role === "admin" ? "Super Admin" : "User"}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setUserForm(u);
+                              setUserOpen(true);
+                            }}
+                          >
+                            Edit
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Role Super Admin khusus untuk approval Adjustment. Demo: toggle role di
+                sidebar.
+              </p>
+          </>
+        )}
 
-        <TabsContent value="gudang">
-          <div className="mb-3 flex justify-end">
-            <Button
-              className="bg-emerald-700 hover:bg-emerald-800"
-              onClick={() => {
-                setGudangForm({
-                  id: uid("gd"),
-                  kode: "",
-                  nama: "",
-                  tipe: "lainnya",
-                });
-                setGudangOpen(true);
-              }}
-            >
-              Tambah Gudang
-            </Button>
-          </div>
-          <div className="overflow-x-auto rounded-xl border bg-white">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Kode</TableHead>
-                  <TableHead>Nama</TableHead>
-                  <TableHead>Tipe</TableHead>
-                  <TableHead className="text-right">Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {gudangList.map((g) => (
-                  <TableRow key={g.id}>
-                    <TableCell className="font-medium">{g.kode}</TableCell>
-                    <TableCell>{g.nama}</TableCell>
-                    <TableCell className="uppercase">{g.tipe}</TableCell>
-                    <TableCell className="space-x-2 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setGudangForm(g);
-                          setGudangOpen(true);
-                        }}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          deleteGudang(g.id);
-                          toast.success("Gudang dihapus");
-                        }}
-                      >
-                        Hapus
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </TabsContent>
+        {tab === "gudang" && (
+          <>
+              <div className="mb-3 flex justify-end">
+                <Button
+                  className="bg-emerald-700 hover:bg-emerald-800"
+                  onClick={() => {
+                    setGudangForm({
+                      id: uid("gd"),
+                      kode: "",
+                      nama: "",
+                      tipe: "lainnya",
+                    });
+                    setGudangOpen(true);
+                  }}
+                >
+                  Tambah Gudang
+                </Button>
+              </div>
+              <div className="overflow-x-auto rounded-xl border bg-white">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Kode</TableHead>
+                      <TableHead>Nama</TableHead>
+                      <TableHead>Tipe</TableHead>
+                      <TableHead className="text-right" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {gudangList.map((g) => (
+                      <TableRow key={g.id}>
+                        <TableCell className="font-medium">{g.kode}</TableCell>
+                        <TableCell>{g.nama}</TableCell>
+                        <TableCell className="uppercase">{g.tipe}</TableCell>
+                        <TableCell className="space-x-2 text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setGudangForm(g);
+                              setGudangOpen(true);
+                            }}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              askConfirm(() => {
+                                deleteGudang(g.id);
+                                toast.success("Gudang dihapus");
+                              });
+                            }}
+                          >
+                            Hapus
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+          </>
+        )}
 
-        <TabsContent value="jenis">
-          <div className="mb-3 flex justify-end">
-            <Button
-              className="bg-emerald-700 hover:bg-emerald-800"
-              onClick={() => {
-                setJenisForm({
-                  id: uid("jt"),
-                  kode: "",
-                  nama: "",
-                  untuk: "keduanya",
-                });
-                setJenisOpen(true);
-              }}
-            >
-              Tambah Jenis
-            </Button>
-          </div>
-          <div className="overflow-x-auto rounded-xl border bg-white">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Kode</TableHead>
-                  <TableHead>Nama</TableHead>
-                  <TableHead>Untuk</TableHead>
-                  <TableHead className="text-right">Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {jenisList.map((j) => (
-                  <TableRow key={j.id}>
-                    <TableCell className="font-medium">{j.kode}</TableCell>
-                    <TableCell>{j.nama}</TableCell>
-                    <TableCell className="uppercase">{j.untuk}</TableCell>
-                    <TableCell className="space-x-2 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setJenisForm(j);
-                          setJenisOpen(true);
-                        }}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          deleteJenis(j.id);
-                          toast.success("Jenis dihapus");
-                        }}
-                      >
-                        Hapus
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </TabsContent>
+        {tab === "jenis" && (
+          <>
+              <div className="mb-3 flex justify-end">
+                <Button
+                  className="bg-emerald-700 hover:bg-emerald-800"
+                  onClick={() => {
+                    setJenisForm({
+                      id: uid("jt"),
+                      kode: "",
+                      nama: "",
+                      untuk: "keduanya",
+                    });
+                    setJenisOpen(true);
+                  }}
+                >
+                  Tambah Jenis
+                </Button>
+              </div>
+              <div className="overflow-x-auto rounded-xl border bg-white">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Kode</TableHead>
+                      <TableHead>Nama</TableHead>
+                      <TableHead>Untuk</TableHead>
+                      <TableHead className="text-right" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {jenisList.map((j) => (
+                      <TableRow key={j.id}>
+                        <TableCell className="font-medium">{j.kode}</TableCell>
+                        <TableCell>{j.nama}</TableCell>
+                        <TableCell className="uppercase">{j.untuk}</TableCell>
+                        <TableCell className="space-x-2 text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setJenisForm(j);
+                              setJenisOpen(true);
+                            }}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              askConfirm(() => {
+                                deleteJenis(j.id);
+                                toast.success("Jenis dihapus");
+                              });
+                            }}
+                          >
+                            Hapus
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+          </>
+        )}
 
-        <TabsContent value="log">
-          <div className="overflow-x-auto rounded-xl border bg-white">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Waktu</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Aksi</TableHead>
-                  <TableHead>Detail</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {logs.map((l) => (
-                  <TableRow key={l.id}>
-                    <TableCell>{formatDateTimeID(l.waktu)}</TableCell>
-                    <TableCell>{l.userNama}</TableCell>
-                    <TableCell className="font-medium">{l.aksi}</TableCell>
-                    <TableCell>{l.detail}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </TabsContent>
-      </Tabs>
+        {tab === "log" && (
+          <>
+              <div className="overflow-x-auto rounded-xl border bg-white">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Waktu</TableHead>
+                      <TableHead>User</TableHead>
+                      <TableHead>Aksi</TableHead>
+                      <TableHead>Detail</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {logs.map((l) => (
+                      <TableRow key={l.id}>
+                        <TableCell>{formatDateTimeID(l.waktu)}</TableCell>
+                        <TableCell>{l.userNama}</TableCell>
+                        <TableCell className="font-medium">{l.aksi}</TableCell>
+                        <TableCell>{l.detail}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+          </>
+        )}
+      </SidebarSubnavLayout>
 
       <Dialog open={userOpen} onOpenChange={setUserOpen}>
         <DialogContent>
@@ -356,8 +386,8 @@ export default function SettingPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="user">Non-Admin</SelectItem>
+                  <SelectItem value="admin">Super Admin</SelectItem>
+                  <SelectItem value="user">User</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -8,6 +8,7 @@ import type {
   FinishGood,
   Gudang,
   JenisTransaksi,
+  MaterialBatch,
   MaterialItem,
   StockOpname,
   StockRow,
@@ -53,7 +54,7 @@ export const gudangList: Gudang[] = [
 ];
 
 export const jenisTransaksiList: JenisTransaksi[] = [
-  { id: "jt1", kode: "TRM", nama: "Terima dari Supplier", untuk: "btb" },
+  { id: "jt1", kode: "TRM", nama: "Terima dari Customer", untuk: "btb" },
   { id: "jt2", kode: "RET", nama: "Retur Customer", untuk: "btb" },
   { id: "jt3", kode: "PRD", nama: "Pengeluaran Produksi", untuk: "bkb" },
   { id: "jt4", kode: "KIR", nama: "Kirim ke Customer", untuk: "bkb" },
@@ -155,6 +156,7 @@ export const boms: Bom[] = [
         tanggal: "2026-08-01",
         bagianDirevisi: "Inisial",
         keterangan: "Pembuatan awal",
+        detailPerubahan: ["Before: -", "After: Pembuatan awal"],
         items: [
           { itemId: "i1", qty: 2 },
           { itemId: "i2", qty: 0.05 },
@@ -166,6 +168,12 @@ export const boms: Bom[] = [
         tanggal: "2026-09-05",
         bagianDirevisi: "Qty Lem & Ink",
         keterangan: "Penyesuaian konsumsi tinta",
+        detailPerubahan: [
+          "Before: Material MAT-002 Qty 0.05",
+          "After: Material MAT-002 Qty 0.08",
+          "Before: -",
+          "After: Material MAT-003 Qty 0.02",
+        ],
         items: [
           { itemId: "i1", qty: 2 },
           { itemId: "i2", qty: 0.08 },
@@ -186,6 +194,7 @@ export const boms: Bom[] = [
         tanggal: "2026-09-01",
         bagianDirevisi: "Inisial",
         keterangan: "Pembuatan awal",
+        detailPerubahan: ["Before: -", "After: Pembuatan awal"],
         items: [
           { itemId: "i1", qty: 1 },
           { itemId: "i3", qty: 0.01 },
@@ -202,6 +211,7 @@ export const btbs: Btb[] = [
     no: "260910-00001",
     tanggalTerima: "2026-09-10",
     jenisTransaksiId: "jt1",
+    customerId: "c1",
     createdAt: "2026-09-10T08:00:00",
     items: [
       {
@@ -240,6 +250,7 @@ export const btbs: Btb[] = [
     no: "260911-00002",
     tanggalTerima: "2026-09-11",
     jenisTransaksiId: "jt1",
+    customerId: "c2",
     createdAt: "2026-09-11T09:30:00",
     items: [
       {
@@ -308,6 +319,7 @@ export const stockOpnames: StockOpname[] = [
     no: "260913-00001",
     tanggal: "2026-09-13",
     keterangan: "Opname bulanan Gudang Item",
+    metode: "per_item",
     createdAt: "2026-09-13T07:00:00",
     lines: [
       {
@@ -465,4 +477,63 @@ export function formatDocNo(dateStr: string, seq: number): string {
 
 export function getLatestBomRevision(bom: Bom) {
   return [...bom.revisions].sort((a, b) => b.revisi - a.revisi)[0];
+}
+
+/** Resolve material from live store, with seed fallback (avoids raw ids like "i1"). */
+export function findItem(
+  itemId: string,
+  live: MaterialItem[] = [],
+): MaterialItem | undefined {
+  if (!itemId) return undefined;
+  return live.find((i) => i.id === itemId) ?? items.find((i) => i.id === itemId);
+}
+
+/** Resolve finish good from live store, with seed fallback. */
+export function findFinishGood(
+  fgId: string,
+  live: FinishGood[] = [],
+): FinishGood | undefined {
+  if (!fgId) return undefined;
+  return (
+    live.find((f) => f.id === fgId) ?? finishGoods.find((f) => f.id === fgId)
+  );
+}
+
+/** Ensure seed master rows exist in persisted lists (missing ids get restored). */
+export function ensureSeedById<T extends { id: string }>(
+  seed: T[],
+  live: T[],
+): T[] {
+  const map = new Map(live.map((row) => [row.id, row]));
+  for (const row of seed) {
+    if (!map.has(row.id)) map.set(row.id, row);
+  }
+  return Array.from(map.values());
+}
+
+/** Turunan batch masuk material dari baris BTB (mock). */
+export function getBatchesForItem(
+  itemId: string,
+  docs: Btb[] = btbs,
+): MaterialBatch[] {
+  const rows: MaterialBatch[] = [];
+  for (const btb of docs) {
+    btb.items.forEach((line, idx) => {
+      if (line.itemId !== itemId) return;
+      rows.push({
+        id: `${btb.id}-item-${idx}`,
+        itemId,
+        batchCustomer: line.batchCustomer,
+        qtyMasuk: line.qty,
+        qtySisa: line.qtySisa,
+        satuan: line.satuan,
+        tanggalMasuk: btb.tanggalTerima,
+        sumberBtbId: btb.id,
+        sumberBtbNo: btb.no,
+        gudangId: line.gudangId,
+        keterangan: line.keterangan,
+      });
+    });
+  }
+  return rows.sort((a, b) => b.tanggalMasuk.localeCompare(a.tanggalMasuk));
 }

@@ -1,13 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { toast } from "sonner";
-import { BackLink, PageHeader, StatusBadge } from "@/components/shared/page-header";
+import { PageHeader, StatusBadge } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -16,11 +11,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDocNo } from "@/lib/mock/data";
-import { useAuthStore, useDataStore } from "@/lib/store";
-import type { Adjustment, AdjustmentLine } from "@/lib/types";
-import { formatDateID, todayISO, uid } from "@/lib/utils";
+import { useDataStore } from "@/lib/store";
+import { formatDateID } from "@/lib/utils";
 
 export default function AdjustmentListPage() {
   const adjustments = useDataStore((s) => s.adjustments);
@@ -29,7 +21,7 @@ export default function AdjustmentListPage() {
     <div>
       <PageHeader
         title="Adjustment"
-        description="Menyamakan stok hasil opname. Wajib approval Admin."
+        description="Koreksi stok berdasarkan hasil stock opname. Approval hanya oleh Super Admin."
         action={
           <Button asChild className="bg-emerald-700 hover:bg-emerald-800">
             <Link href="/transaksi/adjustment/baru">Buat Adjustment</Link>
@@ -44,13 +36,20 @@ export default function AdjustmentListPage() {
               <TableHead>Tanggal</TableHead>
               <TableHead>No. Stock Opname</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="text-right">Aksi</TableHead>
+              <TableHead className="text-right" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {adjustments.map((a) => (
               <TableRow key={a.id}>
-                <TableCell className="font-medium">{a.no}</TableCell>
+                <TableCell>
+                  <Link
+                    href={`/transaksi/adjustment/${a.id}`}
+                    className="text-emerald-800 hover:underline"
+                  >
+                    {a.no}
+                  </Link>
+                </TableCell>
                 <TableCell>{formatDateID(a.tanggal)}</TableCell>
                 <TableCell>{a.stockOpnameNo}</TableCell>
                 <TableCell>
