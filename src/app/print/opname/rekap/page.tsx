@@ -25,10 +25,20 @@ export default function PrintOpnameRekapPage() {
   const items = useDataStore((s) => s.items);
   const finishGoods = useDataStore((s) => s.finishGoods);
   const btbs = useDataStore((s) => s.btbs);
+  const bkbs = useDataStore((s) => s.bkbs);
+  const transfers = useDataStore((s) => s.transfers);
   const stock = useMemo(
     () =>
-      buildStockRows({ customers, gudangList, items, finishGoods, btbs }),
-    [customers, gudangList, items, finishGoods, btbs],
+      buildStockRows({
+        customers,
+        gudangList,
+        items,
+        finishGoods,
+        btbs,
+        bkbs,
+        transfers,
+      }),
+    [customers, gudangList, items, finishGoods, btbs, bkbs, transfers],
   );
 
   const aggregated = useMemo(() => {

@@ -69,7 +69,7 @@ export default function PrintBomPage() {
         item?.kode ?? "-",
         item?.nama ?? "-",
         String(l.qty),
-        item?.uom ?? "-",
+        item?.uom1 ?? "-",
       ];
     }) ?? [];
 

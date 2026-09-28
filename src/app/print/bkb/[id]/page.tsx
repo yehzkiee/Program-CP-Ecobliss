@@ -12,13 +12,13 @@ import {
 } from "@/components/print/print-document";
 import { findItem, findFinishGood } from "@/lib/mock/data";
 import { useDataStore } from "@/lib/store";
-import { formatDateID } from "@/lib/utils";
+import { formatDateID, formatDateShort } from "@/lib/utils";
 
 const LINE_COLS = [
-  { key: "kode", header: "Kode", width: "14%" },
-  { key: "nama", header: "Nama", width: "26%" },
-  { key: "btb", header: "BTB Sumber", width: "16%" },
-  { key: "tgl", header: "Tgl Terima", width: "14%" },
+  { key: "kode", header: "Kode", width: "12%" },
+  { key: "nama", header: "Nama", width: "24%" },
+  { key: "btb", header: "BTB Sumber", width: "22%" },
+  { key: "tgl", header: "Tgl Terima", width: "12%" },
   { key: "qty", header: "Qty", width: "12%", align: "right" as const },
   { key: "gudang", header: "Gudang", width: "18%" },
 ];
@@ -60,7 +60,7 @@ export default function PrintBkbPage() {
       item?.kode ?? "-",
       item?.nama ?? "-",
       l.btbNo || "-",
-      l.btbTanggalTerima ? formatDateID(l.btbTanggalTerima) : "-",
+      l.btbTanggalTerima ? formatDateShort(l.btbTanggalTerima) : "-",
       formatQty(l.qty, l.satuan),
       gudangMap[l.gudangId]?.nama ?? "-",
     ];
@@ -72,7 +72,7 @@ export default function PrintBkbPage() {
       fg?.kode ?? "-",
       fg?.nama ?? "-",
       l.btbNo || "-",
-      l.btbTanggalTerima ? formatDateID(l.btbTanggalTerima) : "-",
+      l.btbTanggalTerima ? formatDateShort(l.btbTanggalTerima) : "-",
       formatQty(l.qty, l.satuan),
       gudangMap[l.gudangId]?.nama ?? "-",
     ];

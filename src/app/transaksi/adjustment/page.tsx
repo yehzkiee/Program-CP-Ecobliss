@@ -51,7 +51,7 @@ export default function AdjustmentListPage() {
                   </Link>
                 </TableCell>
                 <TableCell>{formatDateID(a.tanggal)}</TableCell>
-                <TableCell>{a.stockOpnameNo}</TableCell>
+                <TableCell>{a.stockOpnameNo || "—"}</TableCell>
                 <TableCell>
                   <StatusBadge status={a.status} />
                 </TableCell>

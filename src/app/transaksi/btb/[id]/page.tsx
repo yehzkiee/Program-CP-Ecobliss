@@ -20,11 +20,18 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDocNo, findItem, findFinishGood } from "@/lib/mock/data";
+import { JENIS_TRANSAKSI_BTB } from "@/lib/jenis-transaksi";
 import { useAuthStore, useDataStore } from "@/lib/store";
 import type { Btb, BtbLineFg, BtbLineItem } from "@/lib/types";
 import { formatDateID, todayISO, uid, formatQty, formatKodeNama } from "@/lib/utils";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { FileUpload, type UploadedFile } from "@/components/shared/file-upload";
+
+/** Opsi dropdown Jenis Transaksi BTB — `value` disimpan sebagai jenisTransaksiId. */
+const JENIS_OPTIONS = JENIS_TRANSAKSI_BTB.map((o) => ({
+  value: o.value,
+  label: o.label,
+}));
 
 export default function BtbFormPage() {
   const params = useParams<{ id: string }>();
@@ -36,17 +43,10 @@ export default function BtbFormPage() {
   const finishGoods = useDataStore((s) => s.finishGoods);
   const customers = useDataStore((s) => s.customers);
   const gudangList = useDataStore((s) => s.gudangList);
-  const allJenis = useDataStore((s) => s.jenisTransaksiList);
   const upsertBtb = useDataStore((s) => s.upsertBtb);
   const addLog = useDataStore((s) => s.addLog);
   const user = useAuthStore((s) => s.currentUser);
   const { askConfirm, confirmDialog } = useConfirmDialog();
-
-  const jenisList = useMemo(
-    () =>
-      allJenis.filter((j) => j.untuk === "btb" || j.untuk === "keduanya"),
-    [allJenis],
-  );
 
   const existing = isNew ? undefined : btbs.find((b) => b.id === id);
   const [editing, setEditing] = useState(false);
@@ -57,7 +57,7 @@ export default function BtbFormPage() {
     existing?.tanggalTerima ?? todayISO(),
   );
   const [jenisId, setJenisId] = useState(
-    existing?.jenisTransaksiId ?? jenisList[0]?.id ?? "",
+    existing?.jenisTransaksiId ?? JENIS_OPTIONS[0]?.value ?? "",
   );
   const [lineItems, setLineItems] = useState<BtbLineItem[]>(
     existing?.items ?? [],
@@ -79,14 +79,12 @@ export default function BtbFormPage() {
     [gudangList],
   );
   const jenisMap = useMemo(
-    () => Object.fromEntries(jenisList.map((j) => [j.id, j])),
-    [jenisList],
+    () =>
+      Object.fromEntries(JENIS_OPTIONS.map((j) => [j.value, { nama: j.label }])),
+    [],
   );
 
-  const jenisSelectItems = useMemo(
-    () => jenisList.map((j) => ({ value: j.id, label: j.nama })),
-    [jenisList],
-  );
+  const jenisSelectItems = JENIS_OPTIONS;
   const itemSelectItems = useMemo(
     () =>
       items.map((i) => ({
@@ -141,7 +139,7 @@ export default function BtbFormPage() {
         itemId: item.id,
         batchCustomer: item.batchCustomer,
         qty: 0,
-        satuan: item.uom,
+        satuan: item.uom1,
         gudangId: gudangList[0]?.id ?? "",
         keterangan: "",
         qtySisa: 0,
@@ -158,7 +156,7 @@ export default function BtbFormPage() {
         fgId: fg.id,
         batchCustomer: fg.batchCustomer,
         qty: 0,
-        satuan: fg.uom,
+        satuan: fg.uom1,
         gudangId:
           gudangList.find((g) => g.tipe === "fg")?.id ?? gudangList[0]?.id ?? "",
         keterangan: "",
@@ -333,9 +331,9 @@ export default function BtbFormPage() {
                 <SelectValue placeholder="Pilih jenis" />
               </SelectTrigger>
               <SelectContent>
-                {jenisList.map((j) => (
-                  <SelectItem key={j.id} value={j.id}>
-                    {j.nama}
+                {JENIS_OPTIONS.map((j) => (
+                  <SelectItem key={j.value} value={j.value}>
+                    {j.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -414,7 +412,7 @@ export default function BtbFormPage() {
                         ...line,
                         itemId: vv,
                         batchCustomer: item?.batchCustomer ?? "",
-                        satuan: item?.uom ?? "",
+                        satuan: item?.uom1 ?? "",
                       };
                       setLineItems(next);
                     }}
@@ -565,7 +563,7 @@ export default function BtbFormPage() {
                         ...line,
                         fgId: vv,
                         batchCustomer: fg?.batchCustomer ?? "",
-                        satuan: fg?.uom ?? "",
+                        satuan: fg?.uom1 ?? "",
                       };
                       setLineFgs(next);
                     }}

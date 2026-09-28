@@ -22,8 +22,15 @@ export interface MaterialItem {
   nama: string;
   customerId: string;
   kategori: string;
-  uom: string;
-  konversi: number;
+  /** Satuan dasar (tingkat 1). */
+  uom1: string;
+  konversi1: number;
+  /** Satuan tingkat 2 (opsional). */
+  uom2: string;
+  konversi2: number;
+  /** Satuan tingkat 3 (opsional). */
+  uom3: string;
+  konversi3: number;
   batchCustomer: string;
   status: StatusAktif;
 }
@@ -50,8 +57,15 @@ export interface FinishGood {
   customerId: string;
   kategori: string;
   batchCustomer: string;
-  uom: string;
-  konversi: number;
+  /** Satuan dasar (tingkat 1). */
+  uom1: string;
+  konversi1: number;
+  /** Satuan tingkat 2 (opsional). */
+  uom2: string;
+  konversi2: number;
+  /** Satuan tingkat 3 (opsional). */
+  uom3: string;
+  konversi3: number;
   status: StatusAktif;
 }
 
@@ -183,13 +197,15 @@ export interface StockOpnameLine {
   selisih: number;
 }
 
+export type OpnameMetode = "per_batch" | "per_item" | "per_gudang";
+
 export interface StockOpname {
   id: string;
   no: string;
   tanggal: string;
   lines: StockOpnameLine[];
   keterangan: string;
-  metode?: "per_batch" | "per_item";
+  metode?: OpnameMetode;
   createdAt: string;
 }
 

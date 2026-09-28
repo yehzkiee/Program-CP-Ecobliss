@@ -297,6 +297,18 @@ export default function BomFormPage() {
     applySnapshot(after);
   }
 
+  if (!isNew && !existing) {
+    return (
+      <div>
+        <BackLink href="/master/bom" />
+        <PageHeader
+          title="BOM tidak ditemukan"
+          description="Dokumen yang diminta tidak ada di data."
+        />
+      </div>
+    );
+  }
+
   return (
     <div>
       {confirmDialog}

@@ -34,6 +34,7 @@ import type { Customer, FinishGood, StatusAktif } from "@/lib/types";
 import { uid } from "@/lib/utils";
 
 const UOM_OPTIONS = ["PCS", "BOX", "SET", "PACK", "ROLL"] as const;
+const UOM_NONE = "-";
 
 const blank = (): FinishGood => ({
   id: "",
@@ -42,8 +43,12 @@ const blank = (): FinishGood => ({
   customerId: "",
   kategori: "Finish Good",
   batchCustomer: "",
-  uom: "PCS",
-  konversi: 1,
+  uom1: "PCS",
+  konversi1: 1,
+  uom2: "",
+  konversi2: 0,
+  uom3: "",
+  konversi3: 0,
   status: "aktif",
 });
 
@@ -220,8 +225,9 @@ export default function FinishGoodPage() {
               <TableHead>Nama FG</TableHead>
               <TableHead>Customer</TableHead>
               <TableHead>Batch Customer</TableHead>
-              <TableHead>UOM</TableHead>
-              <TableHead>Konversi</TableHead>
+              <TableHead>UOM 1</TableHead>
+              <TableHead>UOM 2</TableHead>
+              <TableHead>UOM 3</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
@@ -239,8 +245,15 @@ export default function FinishGoodPage() {
                 <TableCell>{i.nama}</TableCell>
                 <TableCell>{resolveCustomerNama(i.customerId)}</TableCell>
                 <TableCell>{i.batchCustomer}</TableCell>
-                <TableCell>{i.uom}</TableCell>
-                <TableCell>{i.konversi}</TableCell>
+                <TableCell>
+                  {i.uom1 ? `${i.uom1} (${i.konversi1})` : "-"}
+                </TableCell>
+                <TableCell>
+                  {i.uom2 ? `${i.uom2} (${i.konversi2})` : "-"}
+                </TableCell>
+                <TableCell>
+                  {i.uom3 ? `${i.uom3} (${i.konversi3})` : "-"}
+                </TableCell>
                 <TableCell>
                   <StatusBadge status={i.status} />
                 </TableCell>
@@ -251,7 +264,7 @@ export default function FinishGoodPage() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Tambah Finish Good</DialogTitle>
           </DialogHeader>
@@ -308,15 +321,20 @@ export default function FinishGoodPage() {
                 {form.batchCustomer || "-"}
               </p>
             </div>
+            <div className="space-y-2 sm:col-span-2">
+              <p className="text-sm font-medium text-slate-700">
+                Konversi UOM (3 tingkatan)
+              </p>
+            </div>
             <div className="space-y-2">
-              <Label>UOM</Label>
+              <Label>UOM 1</Label>
               <Select
-                value={form.uom}
-                onValueChange={(v) => setForm({ ...form, uom: v ?? "PCS" })}
+                value={form.uom1}
+                onValueChange={(v) => setForm({ ...form, uom1: v ?? "PCS" })}
                 items={UOM_OPTIONS.map((u) => ({ value: u, label: u }))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Pilih UOM" />
+                  <SelectValue placeholder="Pilih UOM 1" />
                 </SelectTrigger>
                 <SelectContent>
                   {UOM_OPTIONS.map((u) => (
@@ -328,12 +346,95 @@ export default function FinishGoodPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Konversi</Label>
+              <Label>Konversi UOM 1</Label>
               <Input
                 type="number"
-                value={form.konversi}
+                min={0}
+                value={form.konversi1}
                 onChange={(e) =>
-                  setForm({ ...form, konversi: Number(e.target.value) || 0 })
+                  setForm({ ...form, konversi1: Number(e.target.value) || 0 })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>UOM 2</Label>
+              <Select
+                value={form.uom2 || UOM_NONE}
+                onValueChange={(v) =>
+                  setForm({
+                    ...form,
+                    uom2: !v || v === UOM_NONE ? "" : v,
+                    konversi2: !v || v === UOM_NONE ? 0 : form.konversi2 || 1,
+                  })
+                }
+                items={[
+                  { value: UOM_NONE, label: "—" },
+                  ...UOM_OPTIONS.map((u) => ({ value: u, label: u })),
+                ]}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Opsional" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UOM_NONE}>—</SelectItem>
+                  {UOM_OPTIONS.map((u) => (
+                    <SelectItem key={u} value={u}>
+                      {u}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Konversi UOM 2</Label>
+              <Input
+                type="number"
+                min={0}
+                disabled={!form.uom2}
+                value={form.konversi2}
+                onChange={(e) =>
+                  setForm({ ...form, konversi2: Number(e.target.value) || 0 })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>UOM 3</Label>
+              <Select
+                value={form.uom3 || UOM_NONE}
+                onValueChange={(v) =>
+                  setForm({
+                    ...form,
+                    uom3: !v || v === UOM_NONE ? "" : v,
+                    konversi3: !v || v === UOM_NONE ? 0 : form.konversi3 || 1,
+                  })
+                }
+                items={[
+                  { value: UOM_NONE, label: "—" },
+                  ...UOM_OPTIONS.map((u) => ({ value: u, label: u })),
+                ]}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Opsional" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UOM_NONE}>—</SelectItem>
+                  {UOM_OPTIONS.map((u) => (
+                    <SelectItem key={u} value={u}>
+                      {u}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Konversi UOM 3</Label>
+              <Input
+                type="number"
+                min={0}
+                disabled={!form.uom3}
+                value={form.konversi3}
+                onChange={(e) =>
+                  setForm({ ...form, konversi3: Number(e.target.value) || 0 })
                 }
               />
             </div>

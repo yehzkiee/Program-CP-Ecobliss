@@ -115,6 +115,16 @@ export default function StockOpnameListPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex flex-wrap justify-end gap-2">
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/transaksi/stock-opname/${s.id}`}>
+                          Lihat
+                        </Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/transaksi/stock-opname/${s.id}?edit=1`}>
+                          Edit
+                        </Link>
+                      </Button>
                       {adj?.status === "menunggu_approval" && canApprove && (
                         <>
                           <Button

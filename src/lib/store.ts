@@ -9,6 +9,7 @@ import {
   boms as seedBoms,
   btbs as seedBtbs,
   customers as seedCustomers,
+  ensureKartonTransfer,
   ensureSeedById,
   finishGoods as seedFgs,
   gudangList as seedGudang,
@@ -34,6 +35,10 @@ import type {
   TransferGudang,
   User,
 } from "@/lib/types";
+import { migrateUomFields } from "@/lib/utils";
+import {
+  resolveJenisTransaksiId,
+} from "@/lib/jenis-transaksi";
 
 interface AuthState {
   currentUser: User | null;
@@ -173,15 +178,31 @@ export const useDataStore = create<DataState>()(
     }),
     {
       name: "program-cp-data",
-      version: 2,
+      version: 5,
       migrate: (persisted) => {
         const state = (persisted ?? {}) as Partial<DataState>;
         return {
           ...state,
-          items: ensureSeedById(seedItems, state.items ?? []),
-          finishGoods: ensureSeedById(seedFgs, state.finishGoods ?? []),
+          items: ensureSeedById(
+            seedItems,
+            (state.items ?? []).map((row) => migrateUomFields(row)),
+          ),
+          finishGoods: ensureSeedById(
+            seedFgs,
+            (state.finishGoods ?? []).map((row) => migrateUomFields(row)),
+          ),
           customers: ensureSeedById(seedCustomers, state.customers ?? []),
           gudangList: ensureSeedById(seedGudang, state.gudangList ?? []),
+          // Ganti penuh agar opsi lama tidak ikut muncul di Setting/list.
+          jenisTransaksiList: seedJenis,
+          btbs: (state.btbs ?? []).map((b) => ({
+            ...b,
+            jenisTransaksiId: resolveJenisTransaksiId(b.jenisTransaksiId),
+          })),
+          bkbs: (state.bkbs ?? []).map((b) => ({
+            ...b,
+            jenisTransaksiId: resolveJenisTransaksiId(b.jenisTransaksiId),
+          })),
         };
       },
       merge: (persisted, current) => {
@@ -189,8 +210,16 @@ export const useDataStore = create<DataState>()(
         return {
           ...current,
           ...p,
-          items: ensureSeedById(seedItems, p.items ?? current.items),
-          finishGoods: ensureSeedById(seedFgs, p.finishGoods ?? current.finishGoods),
+          items: ensureSeedById(
+            seedItems,
+            (p.items ?? current.items).map((row) => migrateUomFields(row)),
+          ),
+          finishGoods: ensureSeedById(
+            seedFgs,
+            (p.finishGoods ?? current.finishGoods).map((row) =>
+              migrateUomFields(row),
+            ),
+          ),
           customers: ensureSeedById(
             seedCustomers,
             p.customers ?? current.customers,
@@ -199,6 +228,21 @@ export const useDataStore = create<DataState>()(
             seedGudang,
             p.gudangList ?? current.gudangList,
           ),
+          jenisTransaksiList: ensureSeedById(
+            seedJenis,
+            (p.jenisTransaksiList ?? current.jenisTransaksiList).filter((j) =>
+              seedJenis.some((s) => s.id === j.id),
+            ),
+          ),
+          btbs: (p.btbs ?? current.btbs).map((b) => ({
+            ...b,
+            jenisTransaksiId: resolveJenisTransaksiId(b.jenisTransaksiId),
+          })),
+          transfers: ensureKartonTransfer(p.transfers ?? current.transfers),
+          bkbs: (p.bkbs ?? current.bkbs).map((b) => ({
+            ...b,
+            jenisTransaksiId: resolveJenisTransaksiId(b.jenisTransaksiId),
+          })),
         };
       },
     },

@@ -23,6 +23,17 @@ export function formatDateID(iso: string) {
   });
 }
 
+/** Format ringkas dd/MM/yy — cocok untuk kolom sempit (mis. BTB Sumber). */
+export function formatDateShort(iso: string) {
+  if (!iso) return "-";
+  const d = new Date(iso.includes("T") ? iso : `${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${dd}/${mm}/${yy}`;
+}
+
 export function formatDateTimeID(iso: string) {
   if (!iso) return "-";
   return new Date(iso).toLocaleString("id-ID", {
@@ -125,6 +136,58 @@ export function formatJenisBarang(jenis?: string | null) {
   if (jenis === "fg") return "Finish Good";
   if (!jenis) return "-";
   return jenis;
+}
+
+/** Format ringkas 3 tingkatan UOM, contoh: `LBR (1) · BOX (50) · SET (20)`. */
+export function formatUomTingkat(row: {
+  uom1?: string;
+  konversi1?: number;
+  uom2?: string;
+  konversi2?: number;
+  uom3?: string;
+  konversi3?: number;
+}) {
+  const parts: string[] = [];
+  if (row.uom1) parts.push(`${row.uom1} (${row.konversi1 ?? 0})`);
+  if (row.uom2) parts.push(`${row.uom2} (${row.konversi2 ?? 0})`);
+  if (row.uom3) parts.push(`${row.uom3} (${row.konversi3 ?? 0})`);
+  return parts.length ? parts.join(" · ") : "-";
+}
+
+type LegacyUomFields = {
+  uom?: string;
+  konversi?: number;
+  uom1?: string;
+  konversi1?: number;
+  uom2?: string;
+  konversi2?: number;
+  uom3?: string;
+  konversi3?: number;
+};
+
+/** Normalisasi data lama (uom/konversi tunggal) ke 3 tingkatan UOM. */
+export function migrateUomFields<T extends LegacyUomFields>(row: T): T {
+  const hasNew = row.uom1 !== undefined || row.konversi1 !== undefined;
+  if (hasNew) {
+    return {
+      ...row,
+      uom1: row.uom1 ?? row.uom ?? "PCS",
+      konversi1: row.konversi1 ?? row.konversi ?? 1,
+      uom2: row.uom2 ?? "",
+      konversi2: row.konversi2 ?? 0,
+      uom3: row.uom3 ?? "",
+      konversi3: row.konversi3 ?? 0,
+    };
+  }
+  return {
+    ...row,
+    uom1: row.uom ?? "PCS",
+    konversi1: row.konversi ?? 1,
+    uom2: "",
+    konversi2: 0,
+    uom3: "",
+    konversi3: 0,
+  };
 }
 
 export { STATUS_LABELS };

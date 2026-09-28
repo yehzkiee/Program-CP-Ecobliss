@@ -32,12 +32,16 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { colGroupBatchHistory } from "@/lib/table-styles";
-import { getBatchesForItem } from "@/lib/mock/data";
+import {
+  getBatchesForItem,
+  isTransferGeneratedBtbLine,
+} from "@/lib/mock/data";
 import { useDataStore } from "@/lib/store";
 import type { MaterialItem, StatusAktif } from "@/lib/types";
 import { formatDateID, formatQty } from "@/lib/utils";
 
 const UOM_OPTIONS = ["LBR", "KG", "M", "PCS", "BOX", "ROLL", "SET"] as const;
+const UOM_NONE = "-";
 
 export default function ItemDetailPage() {
   const params = useParams<{ id: string }>();
@@ -79,7 +83,12 @@ export default function ItemDetailPage() {
   }
 
   const draft = form ?? item;
-  const totalMasuk = batches.reduce((s, b) => s + b.qtyMasuk, 0);
+  const totalMasuk = batches.reduce(
+    (sum, batch) =>
+      sum +
+      (isTransferGeneratedBtbLine(batch.keterangan) ? 0 : batch.qtyMasuk),
+    0,
+  );
   const totalSisa = batches.reduce((s, b) => s + b.qtySisa, 0);
 
   function startEdit() {
@@ -190,11 +199,18 @@ export default function ItemDetailPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
+                <p className="text-sm font-medium text-slate-700">
+                  Konversi UOM (3 tingkatan)
+                </p>
+              </div>
               <div className="space-y-1.5">
-                <Label>UOM</Label>
+                <Label>UOM 1</Label>
                 <Select
-                  value={draft.uom}
-                  onValueChange={(v) => setForm({ ...draft, uom: v ?? "PCS" })}
+                  value={draft.uom1}
+                  onValueChange={(v) =>
+                    setForm({ ...draft, uom1: v ?? "PCS" })
+                  }
                   items={UOM_OPTIONS.map((u) => ({ value: u, label: u }))}
                 >
                   <SelectTrigger>
@@ -210,12 +226,106 @@ export default function ItemDetailPage() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Konversi</Label>
+                <Label>Konversi UOM 1</Label>
                 <Input
                   type="number"
-                  value={draft.konversi}
+                  min={0}
+                  value={draft.konversi1}
                   onChange={(e) =>
-                    setForm({ ...draft, konversi: Number(e.target.value) || 0 })
+                    setForm({
+                      ...draft,
+                      konversi1: Number(e.target.value) || 0,
+                    })
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>UOM 2</Label>
+                <Select
+                  value={draft.uom2 || UOM_NONE}
+                  onValueChange={(v) =>
+                    setForm({
+                      ...draft,
+                      uom2: !v || v === UOM_NONE ? "" : v,
+                      konversi2:
+                        !v || v === UOM_NONE ? 0 : draft.konversi2 || 1,
+                    })
+                  }
+                  items={[
+                    { value: UOM_NONE, label: "—" },
+                    ...UOM_OPTIONS.map((u) => ({ value: u, label: u })),
+                  ]}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Opsional" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={UOM_NONE}>—</SelectItem>
+                    {UOM_OPTIONS.map((u) => (
+                      <SelectItem key={u} value={u}>
+                        {u}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Konversi UOM 2</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  disabled={!draft.uom2}
+                  value={draft.konversi2}
+                  onChange={(e) =>
+                    setForm({
+                      ...draft,
+                      konversi2: Number(e.target.value) || 0,
+                    })
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>UOM 3</Label>
+                <Select
+                  value={draft.uom3 || UOM_NONE}
+                  onValueChange={(v) =>
+                    setForm({
+                      ...draft,
+                      uom3: !v || v === UOM_NONE ? "" : v,
+                      konversi3:
+                        !v || v === UOM_NONE ? 0 : draft.konversi3 || 1,
+                    })
+                  }
+                  items={[
+                    { value: UOM_NONE, label: "—" },
+                    ...UOM_OPTIONS.map((u) => ({ value: u, label: u })),
+                  ]}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Opsional" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={UOM_NONE}>—</SelectItem>
+                    {UOM_OPTIONS.map((u) => (
+                      <SelectItem key={u} value={u}>
+                        {u}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Konversi UOM 3</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  disabled={!draft.uom3}
+                  value={draft.konversi3}
+                  onChange={(e) =>
+                    setForm({
+                      ...draft,
+                      konversi3: Number(e.target.value) || 0,
+                    })
                   }
                 />
               </div>
@@ -254,13 +364,33 @@ export default function ItemDetailPage() {
               <DetailField
                 label="Customer"
                 value={
-                  <DocLink href={`/master/customer/${item.customerId}`}>
-                    {custMap[item.customerId]?.nama ?? "-"}
-                  </DocLink>
+                  item.customerId ? (
+                    <DocLink href={`/master/customer/${item.customerId}`}>
+                      {custMap[item.customerId]?.nama ?? "-"}
+                    </DocLink>
+                  ) : (
+                    "-"
+                  )
                 }
               />
-              <DetailField label="UOM" value={item.uom} />
-              <DetailField label="Konversi" value={item.konversi} />
+              <DetailField
+                label="UOM 1"
+                value={
+                  item.uom1 ? `${item.uom1} (${item.konversi1})` : "-"
+                }
+              />
+              <DetailField
+                label="UOM 2"
+                value={
+                  item.uom2 ? `${item.uom2} (${item.konversi2})` : "-"
+                }
+              />
+              <DetailField
+                label="UOM 3"
+                value={
+                  item.uom3 ? `${item.uom3} (${item.konversi3})` : "-"
+                }
+              />
               <DetailField label="Batch Customer" value={item.batchCustomer} />
               <DetailField
                 label="Status"
@@ -277,8 +407,8 @@ export default function ItemDetailPage() {
             Riwayat Batch ({batches.length})
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Total masuk {formatQty(totalMasuk, item.uom)} · Sisa{" "}
-            {formatQty(totalSisa, item.uom)}
+            Total masuk {formatQty(totalMasuk, item.uom1)} · Sisa{" "}
+            {formatQty(totalSisa, item.uom1)}
           </p>
         </CardHeader>
         <CardContent className="overflow-x-auto p-0">

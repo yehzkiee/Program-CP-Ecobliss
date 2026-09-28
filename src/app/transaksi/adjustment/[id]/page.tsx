@@ -3,6 +3,7 @@
 import { Suspense, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { Plus, Trash2 } from "lucide-react";
 import {
   BackLink,
   PageHeader,
@@ -33,11 +34,19 @@ import {
 } from "@/lib/table-styles";
 import { todayISO, uid, isSuperAdmin, cn, formatJenisBarang } from "@/lib/utils";
 
+const NO_SO = "__none__";
+
 function movementLabel(line: AdjustmentLine) {
   if (line.in > 0 && line.out === 0) return "Menambah stok";
   if (line.out > 0 && line.in === 0) return "Mengurangi stok";
   if (line.in > 0 && line.out > 0) return "Koreksi campuran";
   return "Tanpa perubahan";
+}
+
+function signedQty(line: AdjustmentLine) {
+  if (line.out > 0 && line.in === 0) return -line.out;
+  if (line.in > 0 && line.out === 0) return line.in;
+  return 0;
 }
 
 function AdjustmentFormInner() {
@@ -47,6 +56,8 @@ function AdjustmentFormInner() {
   const router = useRouter();
   const adjustments = useDataStore((s) => s.adjustments);
   const stockOpnames = useDataStore((s) => s.stockOpnames);
+  const items = useDataStore((s) => s.items);
+  const finishGoods = useDataStore((s) => s.finishGoods);
   const upsert = useDataStore((s) => s.upsertAdjustment);
   const addLog = useDataStore((s) => s.addLog);
   const user = useAuthStore((s) => s.currentUser);
@@ -55,11 +66,12 @@ function AdjustmentFormInner() {
   const canApprove = isSuperAdmin(user?.role);
 
   const soFromQuery = search.get("so");
-  const initialSo =
-    existing?.stockOpnameId ?? soFromQuery ?? stockOpnames[0]?.id ?? "";
+  const initialSo = existing?.stockOpnameId ?? soFromQuery ?? "";
 
   const [tanggal, setTanggal] = useState(existing?.tanggal ?? todayISO());
   const [soId, setSoId] = useState(initialSo);
+  const [picker, setPicker] = useState("");
+  const [qtyText, setQtyText] = useState<Record<number, string>>({});
   const [keterangan, setKeterangan] = useState(existing?.keterangan ?? "");
   const [status, setStatus] = useState(existing?.status ?? "draft");
   const [fotoBukti, setFotoBukti] = useState<UploadedFile[]>(
@@ -73,9 +85,32 @@ function AdjustmentFormInner() {
   const selectedSo = stockOpnames.find((s) => s.id === soId);
 
   const soSelectItems = useMemo(
-    () => stockOpnames.map((s) => ({ value: s.id, label: s.no })),
+    () => [
+      { value: NO_SO, label: "Tanpa Stock Opname" },
+      ...stockOpnames.map((s) => ({ value: s.id, label: s.no })),
+    ],
     [stockOpnames],
   );
+
+  const productOptions = useMemo(() => {
+    const rows = [
+      ...items
+        .filter((item) => item.status === "aktif")
+        .map((item) => ({
+          value: `item:${item.id}`,
+          label: `${item.kode} - ${item.nama} (Material)`,
+        })),
+      ...finishGoods
+        .filter((fg) => fg.status === "aktif")
+        .map((fg) => ({
+          value: `fg:${fg.id}`,
+          label: `${fg.kode} - ${fg.nama} (Finish Good)`,
+        })),
+    ];
+    return rows.sort((a, b) => a.label.localeCompare(b.label, "id"));
+  }, [items, finishGoods]);
+
+  const mandiri = !soId;
 
   const [lines, setLines] = useState<AdjustmentLine[]>(() => {
     if (existing) return existing.lines;
@@ -96,8 +131,12 @@ function AdjustmentFormInner() {
 
   function loadFromSo(id: string) {
     setSoId(id);
+    setQtyText({});
     const so = stockOpnames.find((s) => s.id === id);
-    if (!so) return;
+    if (!so) {
+      setLines([]);
+      return;
+    }
     setLines(
       so.lines.map((l) => ({
         jenis: l.jenis,
@@ -112,21 +151,74 @@ function AdjustmentFormInner() {
     );
   }
 
-  function save(nextStatus: Adjustment["status"] = "menunggu_approval") {
-    if (!soId || !selectedSo) {
-      toast.error("Pilih No. Stock Opname");
+  function addManualLine() {
+    const [jenis, refId] = picker.split(":");
+    if ((jenis !== "item" && jenis !== "fg") || !refId) return;
+    if (lines.some((line) => line.jenis === jenis && line.refId === refId)) {
+      toast.error("Barang sudah ada di baris adjustment");
+      setPicker("");
       return;
     }
+    const ref =
+      jenis === "item"
+        ? items.find((item) => item.id === refId)
+        : finishGoods.find((fg) => fg.id === refId);
+    if (!ref) {
+      toast.error("Barang tidak ditemukan");
+      setPicker("");
+      return;
+    }
+    setLines((prev) => [
+      ...prev,
+      {
+        jenis,
+        refId: ref.id,
+        kode: ref.kode,
+        nama: ref.nama,
+        qty: 0,
+        out: 0,
+        in: 0,
+        keterangan: "Adjustment mandiri",
+      },
+    ]);
+    setPicker("");
+  }
+
+  function applySignedQty(idx: number, raw: string) {
+    setQtyText((prev) => ({ ...prev, [idx]: raw }));
+    if (raw === "" || raw === "-" || raw === "+") return;
+    const value = Number(raw);
+    if (Number.isNaN(value)) return;
+    const abs = Math.abs(value);
+    setLines((prev) =>
+      prev.map((line, i) =>
+        i === idx
+          ? {
+              ...line,
+              qty: abs,
+              in: value > 0 ? abs : 0,
+              out: value < 0 ? abs : 0,
+            }
+          : line,
+      ),
+    );
+  }
+
+  function save(nextStatus: Adjustment["status"] = "menunggu_approval") {
     if (lines.length === 0) {
-      toast.error("Tidak ada baris adjustment");
+      toast.error("Tambahkan minimal satu baris item");
+      return;
+    }
+    if (lines.some((line) => !line.refId || (line.in <= 0 && line.out <= 0))) {
+      toast.error("Setiap baris wajib memilih barang dan Qty plus atau minus");
       return;
     }
     const payload: Adjustment = {
       id: existing?.id ?? uid("adj"),
       no: existing?.no ?? formatDocNo(tanggal, adjustments.length + 1),
       tanggal,
-      stockOpnameId: soId,
-      stockOpnameNo: selectedSo.no,
+      stockOpnameId: selectedSo?.id ?? "",
+      stockOpnameNo: selectedSo?.no ?? "",
       lines,
       status: nextStatus,
       keterangan,
@@ -173,12 +265,24 @@ function AdjustmentFormInner() {
     toast.success(ok ? "Adjustment disetujui" : "Adjustment ditolak");
   }
 
+  if (!isNew && !existing) {
+    return (
+      <div>
+        <BackLink href="/transaksi/adjustment" />
+        <PageHeader
+          title="Adjustment tidak ditemukan"
+          description="Dokumen yang diminta tidak ada di data."
+        />
+      </div>
+    );
+  }
+
   return (
     <div>
       <BackLink href="/transaksi/adjustment" />
       <PageHeader
-        title={isNew ? "Buat Adjustment" : `Adjustment ${existing?.no}`}
-        description="Menyamakan stok hasil stock opname. Persetujuan hanya oleh Super Admin."
+        title={isNew ? "Buat Adjustment" : `Adjustment ${existing?.no ?? ""}`}
+        description="Bisa merujuk Stock Opname, atau dibuat mandiri tanpa referensi SO. Persetujuan hanya oleh Super Admin."
         action={!isNew ? <StatusBadge status={status} /> : null}
       />
 
@@ -194,25 +298,29 @@ function AdjustmentFormInner() {
         </div>
         <div className="space-y-1.5">
           <Label>No. Stock Opname</Label>
-          <Select
-            value={soId}
-            onValueChange={(v) => {
-              if (v) loadFromSo(v);
-            }}
-            disabled={readOnly}
-            items={soSelectItems}
-          >
-            <SelectTrigger disabled={readOnly}>
-              <SelectValue placeholder="Pilih SO" />
-            </SelectTrigger>
-            <SelectContent>
-              {stockOpnames.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.no}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {readOnly ? (
+            <p className="text-sm text-slate-900">
+              {selectedSo?.no || "Tanpa Stock Opname"}
+            </p>
+          ) : (
+            <Select
+              value={soId || NO_SO}
+              onValueChange={(v) => loadFromSo(!v || v === NO_SO ? "" : v)}
+              items={soSelectItems}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Opsional" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_SO}>Tanpa Stock Opname</SelectItem>
+                {stockOpnames.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.no}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label>Keterangan</Label>
@@ -229,6 +337,38 @@ function AdjustmentFormInner() {
           <CardTitle className="text-base">Baris Adjustment</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto space-y-3">
+          {!readOnly && mandiri && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <Label>Material / Finish Good</Label>
+                <Select
+                  value={picker}
+                  onValueChange={(v) => setPicker(v ?? "")}
+                  items={productOptions}
+                >
+                  <SelectTrigger className="bg-white">
+                    <SelectValue placeholder="Pilih Material atau Finish Good..." />
+                  </SelectTrigger>
+                  <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,36rem)]">
+                    {productOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                type="button"
+                className="bg-emerald-700 hover:bg-emerald-800"
+                disabled={!picker}
+                onClick={addManualLine}
+              >
+                <Plus className="mr-1 size-4" />
+                Tambah Baris Item
+              </Button>
+            </div>
+          )}
           <table className={tableShellClass}>
             <colgroup>
               {colGroupAdjustmentLines.map((width, index) => (
@@ -247,8 +387,20 @@ function AdjustmentFormInner() {
               </tr>
             </thead>
             <tbody>
+              {lines.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="px-3 py-4 text-sm text-muted-foreground"
+                  >
+                    {mandiri
+                      ? "Tambahkan Material atau Finish Good, lalu isi Qty Adjustment (plus atau minus)."
+                      : "Stock Opname ini tidak memiliki baris selisih."}
+                  </td>
+                </tr>
+              )}
               {lines.map((l, idx) => (
-                <tr key={idx} className="border-b last:border-0">
+                <tr key={`${l.jenis}-${l.refId}-${idx}`} className="border-b last:border-0">
                   <td className={tableBodyCellClass}>
                     {formatJenisBarang(l.jenis)}
                   </td>
@@ -256,7 +408,18 @@ function AdjustmentFormInner() {
                   <td className={`${tableBodyCellClass} whitespace-normal`}>
                     {l.nama}
                   </td>
-                  <td className={tableBodyCellRightClass}>{l.qty}</td>
+                  <td className={tableBodyCellRightClass}>
+                    {!readOnly && mandiri ? (
+                      <Input
+                        type="number"
+                        className="ml-auto w-24 text-right"
+                        value={qtyText[idx] ?? String(signedQty(l))}
+                        onChange={(e) => applySignedQty(idx, e.target.value)}
+                      />
+                    ) : (
+                      l.qty
+                    )}
+                  </td>
                   <td
                     className={cn(
                       tableBodyCellRightClass,
@@ -274,7 +437,22 @@ function AdjustmentFormInner() {
                     {l["in"]}
                   </td>
                   <td className={`${tableBodyCellClass} whitespace-normal`}>
-                    {l.keterangan}
+                    <div className="flex items-center justify-between gap-2">
+                      <span>{l.keterangan}</span>
+                      {!readOnly && mandiri && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 shrink-0"
+                          onClick={() =>
+                            setLines((prev) => prev.filter((_, i) => i !== idx))
+                          }
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

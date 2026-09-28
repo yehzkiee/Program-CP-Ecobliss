@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
+import { Plus, Trash2 } from "lucide-react";
 import { BackLink, PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,12 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buildStockRows, formatDocNo } from "@/lib/mock/data";
 import { useAuthStore, useDataStore } from "@/lib/store";
-import type { StockOpname, StockOpnameLine, StockRow } from "@/lib/types";
+import type {
+  OpnameMetode,
+  StockOpname,
+  StockOpnameLine,
+  StockRow,
+} from "@/lib/types";
 import {
   colGroupOpnameWithBatch,
   colGroupOpnameWithoutBatch,
@@ -31,11 +37,39 @@ import {
 } from "@/lib/table-styles";
 import { todayISO, uid, formatJenisBarang } from "@/lib/utils";
 
-type OpnameMetode = "per_batch" | "per_item";
 type DraftLine = StockOpnameLine & { qtyAktualInput: number };
+
+function metodeLabel(metode: OpnameMetode) {
+  if (metode === "per_batch") return "Per Batch";
+  if (metode === "per_gudang") return "Per Gudang";
+  return "Per Item";
+}
+
+function metodeHint(metode: OpnameMetode) {
+  if (metode === "per_batch") {
+    return "Worksheet menampilkan stok per batch customer.";
+  }
+  if (metode === "per_gudang") {
+    return "Worksheet menampilkan seluruh stok pada gudang yang dipilih, digabung per Material/FG.";
+  }
+  return "Worksheet menggabungkan stok per Material/FG dan gudang.";
+}
 
 function productKey(jenis: "item" | "fg", refId: string) {
   return `${jenis}:${refId}`;
+}
+
+function parseProductKey(key: string): { jenis: "item" | "fg"; refId: string } | null {
+  const [jenis, refId] = key.split(":");
+  if ((jenis !== "item" && jenis !== "fg") || !refId) return null;
+  return { jenis, refId };
+}
+
+function draftLineKey(d: DraftLine, metode: OpnameMetode) {
+  if (metode === "per_batch") {
+    return `${d.jenis}-${d.refId}-${d.gudangId}-${d.batchCustomer ?? ""}`;
+  }
+  return `${d.jenis}-${d.refId}-${d.gudangId}`;
 }
 
 function buildDraftsFromStock(
@@ -88,8 +122,78 @@ function buildDraftsFromStock(
   return Array.from(map.values());
 }
 
+/** Semua stok di satu gudang, batch digabung per Material/FG. */
+function buildDraftsFromGudang(stock: StockRow[], gudangId: string): DraftLine[] {
+  const map = new Map<string, DraftLine>();
+  for (const r of stock) {
+    if (r.gudangId !== gudangId) continue;
+    const key = `${r.jenis}-${r.refId}`;
+    const prev = map.get(key);
+    if (prev) {
+      prev.qtySistem += r.qty;
+      prev.qtyAktualInput += r.qty;
+      continue;
+    }
+    map.set(key, {
+      jenis: r.jenis,
+      refId: r.refId,
+      kode: r.kode,
+      nama: r.nama,
+      customerId: r.customerId,
+      gudangId: r.gudangId,
+      qtySistem: r.qty,
+      qtyAktual: r.qty,
+      selisih: 0,
+      qtyAktualInput: r.qty,
+    });
+  }
+  return Array.from(map.values());
+}
+
+/** Zero-stock placeholder when barang belum punya stok di sistem. */
+function buildEmptyDraft(
+  key: string,
+  items: { id: string; kode: string; nama: string; customerId: string }[],
+  finishGoods: { id: string; kode: string; nama: string; customerId: string }[],
+  gudangId: string,
+): DraftLine | null {
+  const parsed = parseProductKey(key);
+  if (!parsed) return null;
+  if (parsed.jenis === "item") {
+    const item = items.find((i) => i.id === parsed.refId);
+    if (!item) return null;
+    return {
+      jenis: "item",
+      refId: item.id,
+      kode: item.kode,
+      nama: item.nama,
+      customerId: item.customerId,
+      gudangId,
+      qtySistem: 0,
+      qtyAktual: 0,
+      selisih: 0,
+      qtyAktualInput: 0,
+    };
+  }
+  const fg = finishGoods.find((f) => f.id === parsed.refId);
+  if (!fg) return null;
+  return {
+    jenis: "fg",
+    refId: fg.id,
+    kode: fg.kode,
+    nama: fg.nama,
+    customerId: fg.customerId,
+    gudangId,
+    qtySistem: 0,
+    qtyAktual: 0,
+    selisih: 0,
+    qtyAktualInput: 0,
+  };
+}
+
 export default function StockOpnameFormPage() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const id = params?.id ?? "";
   const isNew = id === "baru";
   const router = useRouter();
@@ -99,16 +203,31 @@ export default function StockOpnameFormPage() {
   const finishGoods = useDataStore((s) => s.finishGoods);
   const gudangList = useDataStore((s) => s.gudangList);
   const btbs = useDataStore((s) => s.btbs);
+  const bkbs = useDataStore((s) => s.bkbs);
+  const transfers = useDataStore((s) => s.transfers);
   const upsert = useDataStore((s) => s.upsertStockOpname);
   const addLog = useDataStore((s) => s.addLog);
   const user = useAuthStore((s) => s.currentUser);
   const existing = isNew ? undefined : stockOpnames.find((s) => s.id === id);
-  const readOnly = !isNew;
+  const notFound = !isNew && !existing;
+
+  const [editing, setEditing] = useState(
+    () => !isNew && searchParams.get("edit") === "1",
+  );
+  const isView = !isNew && !editing;
 
   const stock = useMemo(
     () =>
-      buildStockRows({ customers, items, finishGoods, gudangList, btbs }),
-    [customers, items, finishGoods, gudangList, btbs],
+      buildStockRows({
+        customers,
+        items,
+        finishGoods,
+        gudangList,
+        btbs,
+        bkbs,
+        transfers,
+      }),
+    [customers, items, finishGoods, gudangList, btbs, bkbs, transfers],
   );
   const custMap = useMemo(
     () => Object.fromEntries(customers.map((c) => [c.id, c])),
@@ -129,6 +248,7 @@ export default function StockOpnameFormPage() {
 
   const fallbackCustomerId = customers[0]?.id ?? "c1";
   const fallbackCustomerNama = customers[0]?.nama ?? "PT Sinar Abadi";
+  const fallbackGudangId = gudangList[0]?.id ?? "";
 
   function resolveCustomerNama(
     customerId: string,
@@ -164,6 +284,7 @@ export default function StockOpnameFormPage() {
     return fallbackCustomerId;
   }
 
+  /** Dropdown: Material + Finish Good. */
   const productOptions = useMemo(() => {
     const fromStock = new Map<string, { value: string; label: string }>();
     for (const r of stock) {
@@ -171,7 +292,7 @@ export default function StockOpnameFormPage() {
       if (!fromStock.has(value)) {
         fromStock.set(value, {
           value,
-          label: `${r.kode} - ${r.nama} (${r.jenis === "item" ? "Item" : "FG"})`,
+          label: `${r.kode} - ${r.nama} (${r.jenis === "item" ? "Material" : "Finish Good"})`,
         });
       }
     }
@@ -180,7 +301,7 @@ export default function StockOpnameFormPage() {
       if (!fromStock.has(value)) {
         fromStock.set(value, {
           value,
-          label: `${i.kode} - ${i.nama} (Item)`,
+          label: `${i.kode} - ${i.nama} (Material)`,
         });
       }
     }
@@ -189,19 +310,21 @@ export default function StockOpnameFormPage() {
       if (!fromStock.has(value)) {
         fromStock.set(value, {
           value,
-          label: `${f.kode} - ${f.nama} (FG)`,
+          label: `${f.kode} - ${f.nama} (Finish Good)`,
         });
       }
     }
-    return Array.from(fromStock.values());
+    return Array.from(fromStock.values()).sort((a, b) =>
+      a.label.localeCompare(b.label, "id"),
+    );
   }, [stock, items, finishGoods]);
 
   const [tanggal, setTanggal] = useState(existing?.tanggal ?? todayISO());
   const [keterangan, setKeterangan] = useState(existing?.keterangan ?? "");
-  const [selectedProduct, setSelectedProduct] = useState("");
   const [metode, setMetode] = useState<OpnameMetode>(
     existing?.metode ?? "per_item",
   );
+  const [pickerValue, setPickerValue] = useState("");
   const [drafts, setDrafts] = useState<DraftLine[]>(() => {
     if (existing) {
       return existing.lines.map((l) => ({
@@ -212,14 +335,172 @@ export default function StockOpnameFormPage() {
     return [];
   });
 
-  useEffect(() => {
-    if (!isNew || !selectedProduct) return;
-    setDrafts(buildDraftsFromStock(stock, selectedProduct, metode));
-  }, [isNew, selectedProduct, metode, stock]);
+  const selectedProductKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const d of drafts) keys.add(productKey(d.jenis, d.refId));
+    return Array.from(keys);
+  }, [drafts]);
+
+  const selectedGudangIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const d of drafts) ids.add(d.gudangId);
+    return Array.from(ids);
+  }, [drafts]);
+
+  const availableToAdd = useMemo(
+    () =>
+      productOptions.filter((p) => !selectedProductKeys.includes(p.value)),
+    [productOptions, selectedProductKeys],
+  );
+
+  const gudangOptions = useMemo(
+    () =>
+      gudangList.map((g) => ({
+        value: g.id,
+        label: `${g.kode} - ${g.nama}`,
+      })),
+    [gudangList],
+  );
+
+  const availableGudang = useMemo(
+    () => gudangOptions.filter((g) => !selectedGudangIds.includes(g.value)),
+    [gudangOptions, selectedGudangIds],
+  );
+
+  function resetFromExisting() {
+    if (!existing) return;
+    setTanggal(existing.tanggal);
+    setKeterangan(existing.keterangan);
+    setMetode(existing.metode ?? "per_item");
+    setDrafts(
+      existing.lines.map((l) => ({
+        ...l,
+        qtyAktualInput: l.qtyAktual,
+      })),
+    );
+    setPickerValue("");
+  }
+
+  function addGudang(gudangId: string) {
+    if (!gudangId) return;
+    if (selectedGudangIds.includes(gudangId)) {
+      toast.error("Gudang sudah ada di worksheet");
+      setPickerValue("");
+      return;
+    }
+    const nextLines = buildDraftsFromGudang(stock, gudangId);
+    if (nextLines.length === 0) {
+      toast.error("Gudang tidak memiliki stok");
+      setPickerValue("");
+      return;
+    }
+    setDrafts((prev) => [...prev, ...nextLines]);
+    setPickerValue("");
+  }
+
+  function removeGudang(gudangId: string) {
+    setDrafts((prev) => prev.filter((d) => d.gudangId !== gudangId));
+  }
+
+  function addProduct(key: string) {
+    if (!key) return;
+    if (selectedProductKeys.includes(key)) {
+      toast.error("Barang sudah ada di worksheet");
+      setPickerValue("");
+      return;
+    }
+
+    let nextLines = buildDraftsFromStock(stock, key, metode);
+    if (nextLines.length === 0) {
+      const empty = buildEmptyDraft(key, items, finishGoods, fallbackGudangId);
+      if (!empty) {
+        toast.error("Barang tidak ditemukan");
+        setPickerValue("");
+        return;
+      }
+      nextLines = [empty];
+    }
+
+    setDrafts((prev) => [...prev, ...nextLines]);
+    setPickerValue("");
+  }
+
+  function removeProduct(key: string) {
+    setDrafts((prev) =>
+      prev.filter((d) => productKey(d.jenis, d.refId) !== key),
+    );
+  }
+
+  function removeDraftRow(idx: number) {
+    setDrafts((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function changeMetode(next: OpnameMetode) {
+    if (next === metode) return;
+
+    const prevByKey = new Map(
+      drafts.map((d) => [draftLineKey(d, metode), d.qtyAktualInput]),
+    );
+    function withPrevQty(line: DraftLine) {
+      const prevQty = prevByKey.get(draftLineKey(line, next));
+      if (prevQty !== undefined) line.qtyAktualInput = prevQty;
+      return line;
+    }
+
+    if (drafts.length === 0) {
+      setMetode(next);
+      setPickerValue("");
+      return;
+    }
+
+    if (next === "per_gudang") {
+      const rebuilt: DraftLine[] = [];
+      for (const gudangId of selectedGudangIds) {
+        for (const line of buildDraftsFromGudang(stock, gudangId)) {
+          rebuilt.push(withPrevQty(line));
+        }
+      }
+      setMetode(next);
+      setDrafts(rebuilt);
+      setPickerValue("");
+      return;
+    }
+
+    if (metode === "per_gudang" && next === "per_item") {
+      setMetode(next);
+      setPickerValue("");
+      return;
+    }
+
+    const gudangFilter =
+      metode === "per_gudang" ? new Set(selectedGudangIds) : null;
+    const rebuilt: DraftLine[] = [];
+    for (const key of selectedProductKeys) {
+      let lines = buildDraftsFromStock(stock, key, next);
+      if (gudangFilter) {
+        lines = lines.filter((line) => gudangFilter.has(line.gudangId));
+      }
+      if (lines.length === 0) {
+        const empty = buildEmptyDraft(
+          key,
+          items,
+          finishGoods,
+          fallbackGudangId,
+        );
+        if (empty && (!gudangFilter || gudangFilter.has(empty.gudangId))) {
+          lines = [empty];
+        }
+      }
+      for (const line of lines) rebuilt.push(withPrevQty(line));
+    }
+    setMetode(next);
+    setDrafts(rebuilt);
+    setPickerValue("");
+  }
 
   function save() {
-    if (!selectedProduct) {
-      toast.error("Pilih Item atau Finish Good yang akan di-opname");
+    if (drafts.length === 0) {
+      toast.error("Tambahkan minimal satu Material atau Finish Good");
       return;
     }
 
@@ -239,7 +520,7 @@ export default function StockOpnameFormPage() {
       .filter((l) => l.selisih !== 0);
 
     if (lines.length === 0) {
-                      toast.error("Tidak ada selisih. Transaksi SO tidak dibuat");
+      toast.error("Tidak ada selisih. Transaksi SO tidak dibuat");
       return;
     }
 
@@ -257,76 +538,110 @@ export default function StockOpnameFormPage() {
       waktu: new Date().toISOString(),
       userId: user?.id ?? "local",
       userNama: user?.nama ?? "User",
-      aksi: "Stock Opname",
+      aksi: isNew ? "Stock Opname" : "Edit Stock Opname",
       detail: `${payload.no} (${lines.length} selisih)`,
     });
-    toast.success(`SO ${payload.no} disimpan dengan ${lines.length} baris selisih`);
+    toast.success(
+      `SO ${payload.no} disimpan dengan ${lines.length} baris selisih`,
+    );
+    setEditing(false);
     router.push(`/transaksi/stock-opname/${payload.id}`);
   }
 
-  const displayLines = readOnly ? existing?.lines ?? [] : drafts;
+  const displayLines = isView ? (existing?.lines ?? []) : drafts;
   const showBatch =
-    (isNew && metode === "per_batch") ||
-    (!isNew && (existing?.metode === "per_batch" || existing?.lines.some((l) => l.batchCustomer)));
+    (!isView && metode === "per_batch") ||
+    (isView &&
+      (existing?.metode === "per_batch" ||
+        existing?.lines.some((l) => l.batchCustomer)));
+
+  if (notFound) {
+    return (
+      <div>
+        <BackLink href="/transaksi/stock-opname" />
+        <p className="text-sm text-muted-foreground">
+          Stock Opname tidak ditemukan.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div>
       <BackLink href="/transaksi/stock-opname" />
       <PageHeader
         title={isNew ? "Buat Stock Opname" : `SO ${existing?.no ?? ""}`}
-        description="Pilih barang dan metode opname, lalu isi qty aktual. Hanya baris dengan selisih yang masuk transaksi."
+        description="Tambah beberapa Material dan/atau Finish Good, isi qty aktual. Hanya baris dengan selisih yang masuk transaksi."
         action={
-          !isNew ? (
-            <Button asChild className="bg-emerald-700 hover:bg-emerald-800">
-              <Link href={`/transaksi/adjustment/baru?so=${id}`}>
-                Buat Adjustment
-              </Link>
-            </Button>
-          ) : undefined
+          <div className="flex flex-wrap gap-2">
+            {isView && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    resetFromExisting();
+                    setEditing(true);
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button asChild className="bg-emerald-700 hover:bg-emerald-800">
+                  <Link href={`/transaksi/adjustment/baru?so=${id}`}>
+                    Buat Adjustment
+                  </Link>
+                </Button>
+              </>
+            )}
+            {editing && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    resetFromExisting();
+                    setEditing(false);
+                  }}
+                >
+                  Batal
+                </Button>
+                <Button
+                  className="bg-emerald-700 hover:bg-emerald-800"
+                  onClick={save}
+                >
+                  Simpan Perubahan
+                </Button>
+              </>
+            )}
+          </div>
         }
       />
 
       <div className="mb-4 grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label>Tanggal</Label>
-          <Input
-            type="date"
-            value={tanggal}
-            disabled={readOnly}
-            onChange={(e) => setTanggal(e.target.value)}
-          />
+          {isView ? (
+            <p className="text-sm text-slate-900">{tanggal}</p>
+          ) : (
+            <Input
+              type="date"
+              value={tanggal}
+              onChange={(e) => setTanggal(e.target.value)}
+            />
+          )}
         </div>
         <div className="space-y-2">
           <Label>Keterangan</Label>
-          <Input
-            value={keterangan}
-            disabled={readOnly}
-            onChange={(e) => setKeterangan(e.target.value)}
-          />
+          {isView ? (
+            <p className="text-sm text-slate-900">{keterangan || "-"}</p>
+          ) : (
+            <Input
+              value={keterangan}
+              onChange={(e) => setKeterangan(e.target.value)}
+            />
+          )}
         </div>
 
-        {isNew && (
+        {!isView && (
           <>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Cari Barang (Item / Finish Good)</Label>
-              <Select
-                value={selectedProduct}
-                onValueChange={(v) => setSelectedProduct(v ?? "")}
-                items={productOptions}
-              >
-                <SelectTrigger className="w-full bg-white">
-                  <SelectValue placeholder="Cari Barang..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {productOptions.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="space-y-2 sm:col-span-2">
               <Label>Metode Opname</Label>
               <div className="flex flex-wrap gap-4 rounded-lg border border-border/80 px-3 py-2.5">
@@ -336,7 +651,7 @@ export default function StockOpnameFormPage() {
                     name="metode-opname"
                     value="per_batch"
                     checked={metode === "per_batch"}
-                    onChange={() => setMetode("per_batch")}
+                    onChange={() => changeMetode("per_batch")}
                     className="size-4 accent-emerald-700"
                   />
                   Per Batch
@@ -347,26 +662,162 @@ export default function StockOpnameFormPage() {
                     name="metode-opname"
                     value="per_item"
                     checked={metode === "per_item"}
-                    onChange={() => setMetode("per_item")}
+                    onChange={() => changeMetode("per_item")}
                     className="size-4 accent-emerald-700"
                   />
                   Per Item
                 </label>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="metode-opname"
+                    value="per_gudang"
+                    checked={metode === "per_gudang"}
+                    onChange={() => changeMetode("per_gudang")}
+                    className="size-4 accent-emerald-700"
+                  />
+                  Per Gudang
+                </label>
               </div>
-              <p className="text-xs text-muted-foreground">
-                {metode === "per_batch"
-                  ? "Worksheet menampilkan stok per batch customer."
-                  : "Worksheet menggabungkan stok per item/FG dan gudang."}
-              </p>
+              <p className="text-xs text-muted-foreground">{metodeHint(metode)}</p>
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
+              <Label>
+                {metode === "per_gudang"
+                  ? "Tambah Gudang"
+                  : "Tambah Barang (Material / Finish Good)"}
+              </Label>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <div className="min-w-0 flex-1">
+                  {metode === "per_gudang" ? (
+                    <Select
+                      value={pickerValue}
+                      onValueChange={(v) => setPickerValue(v ?? "")}
+                      items={availableGudang}
+                    >
+                      <SelectTrigger className="h-8 w-full bg-white">
+                        <SelectValue placeholder="Pilih gudang..." />
+                      </SelectTrigger>
+                      <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,36rem)]">
+                        {availableGudang.length === 0 ? (
+                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                            Semua gudang sudah ditambahkan
+                          </div>
+                        ) : (
+                          availableGudang.map((g) => (
+                            <SelectItem key={g.value} value={g.value}>
+                              {g.label}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Select
+                      value={pickerValue}
+                      onValueChange={(v) => setPickerValue(v ?? "")}
+                      items={availableToAdd}
+                    >
+                      <SelectTrigger className="h-8 w-full bg-white">
+                        <SelectValue placeholder="Pilih Material atau Finish Good..." />
+                      </SelectTrigger>
+                      <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,36rem)]">
+                        {availableToAdd.length === 0 ? (
+                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                            Semua barang sudah ditambahkan
+                          </div>
+                        ) : (
+                          availableToAdd.map((p) => (
+                            <SelectItem key={p.value} value={p.value}>
+                              {p.label}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 bg-emerald-700 hover:bg-emerald-800"
+                  disabled={!pickerValue}
+                  onClick={() =>
+                    metode === "per_gudang"
+                      ? addGudang(pickerValue)
+                      : addProduct(pickerValue)
+                  }
+                >
+                  <Plus className="mr-1 size-4" />
+                  Tambah Baris
+                </Button>
+              </div>
+              {metode === "per_gudang"
+                ? selectedGudangIds.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {selectedGudangIds.map((gudangId) => {
+                        const gudang = gudangMap[gudangId];
+                        const label = gudang
+                          ? `${gudang.kode} - ${gudang.nama}`
+                          : gudangId;
+                        return (
+                          <span
+                            key={gudangId}
+                            className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs"
+                          >
+                            {label}
+                            <button
+                              type="button"
+                              className="rounded p-0.5 text-muted-foreground hover:bg-white hover:text-destructive"
+                              onClick={() => removeGudang(gudangId)}
+                              aria-label={`Hapus ${label}`}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )
+                : selectedProductKeys.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {selectedProductKeys.map((key) => {
+                        const opt = productOptions.find((p) => p.value === key);
+                        const sample = drafts.find(
+                          (d) => productKey(d.jenis, d.refId) === key,
+                        );
+                        const label =
+                          opt?.label ??
+                          (sample ? `${sample.kode} - ${sample.nama}` : key);
+                        return (
+                          <span
+                            key={key}
+                            className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs"
+                          >
+                            {label}
+                            <button
+                              type="button"
+                              className="rounded p-0.5 text-muted-foreground hover:bg-white hover:text-destructive"
+                              onClick={() => removeProduct(key)}
+                              aria-label={`Hapus ${label}`}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
             </div>
           </>
         )}
 
-        {!isNew && existing?.metode && (
+        {isView && existing?.metode && (
           <div className="space-y-1 sm:col-span-2">
             <Label>Metode Opname</Label>
             <p className="text-sm text-slate-900">
-              {existing.metode === "per_batch" ? "Per Batch" : "Per Item"}
+              {metodeLabel(existing.metode)}
             </p>
           </div>
         )}
@@ -375,18 +826,17 @@ export default function StockOpnameFormPage() {
       <Card className="mb-4 border-border/80 bg-white shadow-none">
         <CardHeader>
           <CardTitle className="text-base">
-            {readOnly ? "Daftar Item dengan Selisih" : "Worksheet Opname"}
+            {isView ? "Daftar Item dengan Selisih" : "Worksheet Opname"}
           </CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          {isNew && !selectedProduct ? (
+          {displayLines.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Pilih barang dan metode opname terlebih dahulu untuk menampilkan
-              worksheet perhitungan selisih.
-            </p>
-          ) : displayLines.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Tidak ada stok untuk barang yang dipilih.
+              {isView
+                ? "Tidak ada baris selisih."
+                : metode === "per_gudang"
+                  ? "Tambahkan gudang untuk mulai mengisi worksheet."
+                  : "Tambahkan Material atau Finish Good untuk mulai mengisi worksheet."}
             </p>
           ) : (
             <table className={tableShellClass}>
@@ -397,6 +847,7 @@ export default function StockOpnameFormPage() {
                 ).map((width, index) => (
                   <col key={index} className={width} />
                 ))}
+                {!isView && <col className="w-[56px]" />}
               </colgroup>
               <thead>
                 <tr className="border-b bg-muted/30">
@@ -411,14 +862,17 @@ export default function StockOpnameFormPage() {
                   <th className={tableHeadCellRightClass}>Qty Sistem</th>
                   <th className={tableHeadCellRightClass}>Qty Aktual</th>
                   <th className={tableHeadCellRightClass}>Selisih</th>
+                  {!isView && (
+                    <th className={tableHeadCellClass} />
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {displayLines.map((line, idx) => {
-                  const aktual = readOnly
+                  const aktual = isView
                     ? line.qtyAktual
                     : (line as DraftLine).qtyAktualInput;
-                  const selisih = readOnly
+                  const selisih = isView
                     ? line.selisih
                     : aktual - line.qtySistem;
                   return (
@@ -451,7 +905,7 @@ export default function StockOpnameFormPage() {
                         {line.qtySistem}
                       </td>
                       <td className={tableBodyCellRightClass}>
-                        {readOnly ? (
+                        {isView ? (
                           aktual
                         ) : (
                           <Input
@@ -476,6 +930,19 @@ export default function StockOpnameFormPage() {
                       >
                         {selisih}
                       </td>
+                      {!isView && (
+                        <td className={tableBodyCellClass}>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            onClick={() => removeDraftRow(idx)}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}

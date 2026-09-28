@@ -36,6 +36,7 @@ import type { FinishGood, StatusAktif } from "@/lib/types";
 import { formatDateID } from "@/lib/utils";
 
 const UOM_OPTIONS = ["PCS", "BOX", "SET", "PACK", "ROLL"] as const;
+const UOM_NONE = "-";
 
 export default function FinishGoodDetailPage() {
   const params = useParams<{ id: string }>();
@@ -199,11 +200,18 @@ export default function FinishGoodDetailPage() {
                   {draft.batchCustomer || "-"}
                 </p>
               </div>
+              <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
+                <p className="text-sm font-medium text-slate-700">
+                  Konversi UOM (3 tingkatan)
+                </p>
+              </div>
               <div className="space-y-1.5">
-                <Label>UOM</Label>
+                <Label>UOM 1</Label>
                 <Select
-                  value={draft.uom}
-                  onValueChange={(v) => setForm({ ...draft, uom: v ?? "PCS" })}
+                  value={draft.uom1}
+                  onValueChange={(v) =>
+                    setForm({ ...draft, uom1: v ?? "PCS" })
+                  }
                   items={UOM_OPTIONS.map((u) => ({ value: u, label: u }))}
                 >
                   <SelectTrigger>
@@ -219,12 +227,106 @@ export default function FinishGoodDetailPage() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Konversi</Label>
+                <Label>Konversi UOM 1</Label>
                 <Input
                   type="number"
-                  value={draft.konversi}
+                  min={0}
+                  value={draft.konversi1}
                   onChange={(e) =>
-                    setForm({ ...draft, konversi: Number(e.target.value) || 0 })
+                    setForm({
+                      ...draft,
+                      konversi1: Number(e.target.value) || 0,
+                    })
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>UOM 2</Label>
+                <Select
+                  value={draft.uom2 || UOM_NONE}
+                  onValueChange={(v) =>
+                    setForm({
+                      ...draft,
+                      uom2: !v || v === UOM_NONE ? "" : v,
+                      konversi2:
+                        !v || v === UOM_NONE ? 0 : draft.konversi2 || 1,
+                    })
+                  }
+                  items={[
+                    { value: UOM_NONE, label: "—" },
+                    ...UOM_OPTIONS.map((u) => ({ value: u, label: u })),
+                  ]}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Opsional" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={UOM_NONE}>—</SelectItem>
+                    {UOM_OPTIONS.map((u) => (
+                      <SelectItem key={u} value={u}>
+                        {u}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Konversi UOM 2</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  disabled={!draft.uom2}
+                  value={draft.konversi2}
+                  onChange={(e) =>
+                    setForm({
+                      ...draft,
+                      konversi2: Number(e.target.value) || 0,
+                    })
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>UOM 3</Label>
+                <Select
+                  value={draft.uom3 || UOM_NONE}
+                  onValueChange={(v) =>
+                    setForm({
+                      ...draft,
+                      uom3: !v || v === UOM_NONE ? "" : v,
+                      konversi3:
+                        !v || v === UOM_NONE ? 0 : draft.konversi3 || 1,
+                    })
+                  }
+                  items={[
+                    { value: UOM_NONE, label: "—" },
+                    ...UOM_OPTIONS.map((u) => ({ value: u, label: u })),
+                  ]}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Opsional" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={UOM_NONE}>—</SelectItem>
+                    {UOM_OPTIONS.map((u) => (
+                      <SelectItem key={u} value={u}>
+                        {u}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Konversi UOM 3</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  disabled={!draft.uom3}
+                  value={draft.konversi3}
+                  onChange={(e) =>
+                    setForm({
+                      ...draft,
+                      konversi3: Number(e.target.value) || 0,
+                    })
                   }
                 />
               </div>
@@ -257,14 +359,28 @@ export default function FinishGoodDetailPage() {
               <DetailField
                 label="Customer"
                 value={
-                  <DocLink href={`/master/customer/${fg.customerId}`}>
-                    {custMap[fg.customerId]?.nama ?? "-"}
-                  </DocLink>
+                  fg.customerId ? (
+                    <DocLink href={`/master/customer/${fg.customerId}`}>
+                      {custMap[fg.customerId]?.nama ?? "-"}
+                    </DocLink>
+                  ) : (
+                    "-"
+                  )
                 }
               />
               <DetailField label="Batch Customer" value={fg.batchCustomer} />
-              <DetailField label="UOM" value={fg.uom} />
-              <DetailField label="Konversi" value={fg.konversi} />
+              <DetailField
+                label="UOM 1"
+                value={fg.uom1 ? `${fg.uom1} (${fg.konversi1})` : "-"}
+              />
+              <DetailField
+                label="UOM 2"
+                value={fg.uom2 ? `${fg.uom2} (${fg.konversi2})` : "-"}
+              />
+              <DetailField
+                label="UOM 3"
+                value={fg.uom3 ? `${fg.uom3} (${fg.konversi3})` : "-"}
+              />
               <DetailField
                 label="Status"
                 value={<StatusBadge status={fg.status} />}

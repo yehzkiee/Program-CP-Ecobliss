@@ -20,6 +20,7 @@ import { formatJenisBarang, formatKodeNama } from "@/lib/utils";
 export default function DashboardPage() {
   const btbs = useDataStore((s) => s.btbs);
   const bkbs = useDataStore((s) => s.bkbs);
+  const transfers = useDataStore((s) => s.transfers);
   const items = useDataStore((s) => s.items);
   const fgs = useDataStore((s) => s.finishGoods);
   const customers = useDataStore((s) => s.customers);
@@ -27,6 +28,8 @@ export default function DashboardPage() {
   const adjustments = useDataStore((s) => s.adjustments);
   const stock = buildStockRows({
     btbs,
+    bkbs,
+    transfers,
     items,
     finishGoods: fgs,
     customers,
@@ -82,7 +85,9 @@ export default function DashboardPage() {
                   <div>
                     <p className="font-medium">{a.no}</p>
                     <p className="text-xs text-muted-foreground">
-                      Ref SO {a.stockOpnameNo}
+                      {a.stockOpnameNo
+                        ? `Ref SO ${a.stockOpnameNo}`
+                        : "Adjustment mandiri"}
                     </p>
                   </div>
                   <Badge variant="secondary">Pending</Badge>

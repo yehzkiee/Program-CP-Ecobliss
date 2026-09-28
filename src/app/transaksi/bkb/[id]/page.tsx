@@ -18,11 +18,18 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDocNo, getLatestBomRevision, findItem, findFinishGood } from "@/lib/mock/data";
+import { JENIS_TRANSAKSI_BKB } from "@/lib/jenis-transaksi";
 import { useAuthStore, useDataStore } from "@/lib/store";
 import type { Bkb, BkbLineFg, BkbLineItem } from "@/lib/types";
-import { todayISO, uid, formatDateID, formatQty, formatKodeNama } from "@/lib/utils";
+import { todayISO, uid, formatDateID, formatDateShort, formatQty, formatKodeNama } from "@/lib/utils";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { FileUpload, type UploadedFile } from "@/components/shared/file-upload";
+
+/** Opsi dropdown Jenis Transaksi BKB — `value` disimpan sebagai jenisTransaksiId. */
+const JENIS_OPTIONS = JENIS_TRANSAKSI_BKB.map((o) => ({
+  value: o.value,
+  label: o.label,
+}));
 
 type BtbSourceOption = {
   key: string;
@@ -38,6 +45,13 @@ type BtbSourceOption = {
   qtySisa: number;
 };
 
+/** Label ringkas No. BTB + tanggal agar muat di kolom sempit. */
+function formatBtbSumberLabel(btbNo: string, tanggal?: string) {
+  const no = (btbNo || "").trim() || "-";
+  if (!tanggal) return no;
+  return `${no} · ${formatDateShort(tanggal)}`;
+}
+
 export default function BkbFormPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id ?? "";
@@ -49,18 +63,11 @@ export default function BkbFormPage() {
   const finishGoods = useDataStore((s) => s.finishGoods);
   const boms = useDataStore((s) => s.boms);
   const gudangList = useDataStore((s) => s.gudangList);
-  const allJenis = useDataStore((s) => s.jenisTransaksiList);
   const upsertBkb = useDataStore((s) => s.upsertBkb);
   const upsertBtb = useDataStore((s) => s.upsertBtb);
   const addLog = useDataStore((s) => s.addLog);
   const user = useAuthStore((s) => s.currentUser);
   const { askConfirm, confirmDialog } = useConfirmDialog();
-
-  const jenisList = useMemo(
-    () =>
-      allJenis.filter((j) => j.untuk === "bkb" || j.untuk === "keduanya"),
-    [allJenis],
-  );
 
   const existing = isNew ? undefined : bkbs.find((b) => b.id === id);
   const [editing, setEditing] = useState(false);
@@ -71,7 +78,7 @@ export default function BkbFormPage() {
     existing?.tanggalKeluar ?? todayISO(),
   );
   const [jenisId, setJenisId] = useState(
-    existing?.jenisTransaksiId ?? jenisList[0]?.id ?? "",
+    existing?.jenisTransaksiId ?? JENIS_OPTIONS[0]?.value ?? "",
   );
   const [noSpk, setNoSpk] = useState(existing?.noSpk ?? "");
   const [gudangAsal, setGudangAsal] = useState(gudangList[0]?.id ?? "");
@@ -104,18 +111,16 @@ export default function BkbFormPage() {
     [gudangList],
   );
   const jenisMap = useMemo(
-    () => Object.fromEntries(jenisList.map((j) => [j.id, j])),
-    [jenisList],
+    () =>
+      Object.fromEntries(JENIS_OPTIONS.map((j) => [j.value, { nama: j.label }])),
+    [],
   );
 
   const gudangSelectItems = useMemo(
     () => gudangList.map((g) => ({ value: g.id, label: g.nama })),
     [gudangList],
   );
-  const jenisSelectItems = useMemo(
-    () => jenisList.map((j) => ({ value: j.id, label: j.nama })),
-    [jenisList],
-  );
+  const jenisSelectItems = JENIS_OPTIONS;
   const bomSelectItems = useMemo(
     () =>
       boms.map((b) => ({
@@ -529,9 +534,9 @@ export default function BkbFormPage() {
                   <SelectValue placeholder="Pilih jenis" />
                 </SelectTrigger>
                 <SelectContent>
-                  {jenisList.map((j) => (
-                    <SelectItem key={j.id} value={j.id}>
-                      {j.nama}
+                  {JENIS_OPTIONS.map((j) => (
+                    <SelectItem key={j.value} value={j.value}>
+                      {j.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -553,46 +558,60 @@ export default function BkbFormPage() {
           <CardHeader>
             <CardTitle className="text-base">Ambil dari BOM</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1 space-y-2">
-              <Label>Kode BOM</Label>
+          <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div className="min-w-0 w-full flex-1 space-y-2 sm:min-w-[300px]">
+              <Label htmlFor="bkb-bom-kode">Kode BOM</Label>
               <Select
                 value={bomId}
                 onValueChange={(v) => setBomId(v ?? "")}
                 items={bomSelectItems}
               >
-                <SelectTrigger className="bg-white">
-                  <SelectValue placeholder="Pilih BOM" />
+                <SelectTrigger
+                  id="bkb-bom-kode"
+                  className="h-8 w-full min-w-[300px] bg-white"
+                >
+                  <SelectValue placeholder="Pilih BOM">
+                    {(() => {
+                      const bom = boms.find((b) => b.id === bomId);
+                      if (!bom) return undefined;
+                      return `${bom.kode} - ${fgMap[bom.fgId]?.nama ?? (bom.keterangan || "BOM")}`;
+                    })()}
+                  </SelectValue>
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,36rem)]">
                   {boms.map((b) => (
                     <SelectItem key={b.id} value={b.id}>
-                      {b.kode} - {fgMap[b.fgId]?.nama ?? (b.keterangan || "BOM")}
+                      {b.kode} -{" "}
+                      {fgMap[b.fgId]?.nama ?? (b.keterangan || "BOM")}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="w-full space-y-2 sm:w-32">
-              <Label>Kalikan Qty</Label>
+            <div className="w-full shrink-0 space-y-2 sm:w-32">
+              <Label htmlFor="bkb-bom-multiplier">Kalikan Qty</Label>
               <Input
+                id="bkb-bom-multiplier"
                 type="number"
                 min={1}
                 value={bomMultiplier}
                 onChange={(e) =>
                   setBomMultiplier(Number(e.target.value) || 1)
                 }
-                className="bg-white"
+                className="h-8 bg-white"
               />
             </div>
-            <Button
-              type="button"
-              className="bg-emerald-700 hover:bg-emerald-800"
-              onClick={applyBom}
-            >
-              <Wand2 className="mr-1 size-4" />
-              Terapkan BOM
-            </Button>
+            <div className="flex w-full shrink-0 sm:w-auto">
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 w-full bg-emerald-700 hover:bg-emerald-800 sm:w-auto"
+                onClick={applyBom}
+              >
+                <Wand2 className="mr-1 size-4" />
+                Terapkan BOM
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -630,10 +649,13 @@ export default function BkbFormPage() {
                   value={
                     line.btbId ? (
                       <DocLink href={`/transaksi/btb/${line.btbId}`}>
-                        {line.btbNo || line.btbId}
+                        {formatBtbSumberLabel(
+                          line.btbNo || line.btbId,
+                          line.btbTanggalTerima,
+                        )}
                       </DocLink>
                     ) : (
-                      line.btbNo || "-"
+                      formatBtbSumberLabel(line.btbNo, line.btbTanggalTerima)
                     )
                   }
                 />
@@ -647,14 +669,6 @@ export default function BkbFormPage() {
                   value={gudangMap[line.gudangId]?.nama}
                 />
                 <DetailField
-                  label="Tgl BTB"
-                  value={
-                    line.btbTanggalTerima
-                      ? formatDateID(line.btbTanggalTerima)
-                      : "-"
-                  }
-                />
-                <DetailField
                   label="Ket"
                   value={line.keterangan}
                   className="sm:col-span-2 lg:col-span-2"
@@ -663,7 +677,7 @@ export default function BkbFormPage() {
             ) : (
               <div
                 key={idx}
-                className="grid gap-2 rounded-lg border p-3 lg:grid-cols-7"
+                className="grid gap-2 rounded-lg border p-3 lg:grid-cols-8"
               >
                 <div className="lg:col-span-2">
                   <Label className="text-xs">Nama Item</Label>
@@ -683,13 +697,13 @@ export default function BkbFormPage() {
                         btbTanggalTerima: src?.tanggalTerima ?? "",
                         batchCustomer:
                           src?.batchCustomer ?? item?.batchCustomer ?? "",
-                        satuan: src?.satuan ?? item?.uom ?? "",
+                        satuan: src?.satuan ?? item?.uom1 ?? "",
                         gudangId: src?.gudangId ?? gudangAsal,
                       };
                       setLineItems(next);
                     }}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Pilih item">
                         {(() => {
                           const item = findItem(line.itemId, items);
@@ -708,7 +722,7 @@ export default function BkbFormPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="lg:col-span-2">
+                <div className="min-w-0 lg:col-span-3">
                   <Label className="text-xs">BTB Sumber</Label>
                   <Select
                     value={line.btbId}
@@ -716,7 +730,7 @@ export default function BkbFormPage() {
                       .filter((s) => s.refId === line.itemId)
                       .map((s) => ({
                         value: s.btbId,
-                        label: `${s.btbNo} · tgl ${s.tanggalTerima}`,
+                        label: formatBtbSumberLabel(s.btbNo, s.tanggalTerima),
                       }))}
                     onValueChange={(v) => {
                       const vv = v ?? "";
@@ -735,17 +749,22 @@ export default function BkbFormPage() {
                       setLineItems(next);
                     }}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full min-w-[12rem]">
                       <SelectValue placeholder="Pilih No. BTB">
-                        {line.btbNo || undefined}
+                        {line.btbId
+                          ? formatBtbSumberLabel(
+                              line.btbNo,
+                              line.btbTanggalTerima,
+                            )
+                          : undefined}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,28rem)]">
                       {itemSources
                         .filter((s) => s.refId === line.itemId)
                         .map((s) => (
                           <SelectItem key={s.key} value={s.btbId}>
-                            {s.btbNo} · tgl {s.tanggalTerima}
+                            {formatBtbSumberLabel(s.btbNo, s.tanggalTerima)}
                           </SelectItem>
                         ))}
                     </SelectContent>
@@ -763,9 +782,17 @@ export default function BkbFormPage() {
                     }}
                   />
                 </div>
-                <div>
+                <div className="min-w-[7rem]">
                   <Label className="text-xs">Tgl Terima BTB</Label>
-                  <Input value={line.btbTanggalTerima} disabled />
+                  <Input
+                    className="min-w-[7rem] tabular-nums"
+                    value={
+                      line.btbTanggalTerima
+                        ? formatDateShort(line.btbTanggalTerima)
+                        : ""
+                    }
+                    disabled
+                  />
                 </div>
                 <div className="flex items-end">
                   <Button
@@ -819,10 +846,13 @@ export default function BkbFormPage() {
                   value={
                     line.btbId ? (
                       <DocLink href={`/transaksi/btb/${line.btbId}`}>
-                        {line.btbNo || line.btbId}
+                        {formatBtbSumberLabel(
+                          line.btbNo || line.btbId,
+                          line.btbTanggalTerima,
+                        )}
                       </DocLink>
                     ) : (
-                      line.btbNo || "-"
+                      formatBtbSumberLabel(line.btbNo, line.btbTanggalTerima)
                     )
                   }
                 />
@@ -836,14 +866,6 @@ export default function BkbFormPage() {
                   value={gudangMap[line.gudangId]?.nama}
                 />
                 <DetailField
-                  label="Tgl BTB"
-                  value={
-                    line.btbTanggalTerima
-                      ? formatDateID(line.btbTanggalTerima)
-                      : "-"
-                  }
-                />
-                <DetailField
                   label="Ket"
                   value={line.keterangan}
                   className="sm:col-span-2 lg:col-span-2"
@@ -852,7 +874,7 @@ export default function BkbFormPage() {
             ) : (
               <div
                 key={idx}
-                className="grid gap-2 rounded-lg border p-3 lg:grid-cols-7"
+                className="grid gap-2 rounded-lg border p-3 lg:grid-cols-8"
               >
                 <div className="lg:col-span-2">
                   <Label className="text-xs">Nama Finish Good</Label>
@@ -872,13 +894,13 @@ export default function BkbFormPage() {
                         btbTanggalTerima: src?.tanggalTerima ?? "",
                         batchCustomer:
                           src?.batchCustomer ?? fg?.batchCustomer ?? "",
-                        satuan: src?.satuan ?? fg?.uom ?? "",
+                        satuan: src?.satuan ?? fg?.uom1 ?? "",
                         gudangId: src?.gudangId ?? gudangAsal,
                       };
                       setLineFgs(next);
                     }}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Pilih FG">
                         {(() => {
                           const fg = findFinishGood(line.fgId, finishGoods);
@@ -897,7 +919,7 @@ export default function BkbFormPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="lg:col-span-2">
+                <div className="min-w-0 lg:col-span-3">
                   <Label className="text-xs">BTB Sumber</Label>
                   <Select
                     value={line.btbId}
@@ -905,7 +927,7 @@ export default function BkbFormPage() {
                       .filter((s) => s.refId === line.fgId)
                       .map((s) => ({
                         value: s.btbId,
-                        label: `${s.btbNo} · tgl ${s.tanggalTerima}`,
+                        label: formatBtbSumberLabel(s.btbNo, s.tanggalTerima),
                       }))}
                     onValueChange={(v) => {
                       const vv = v ?? "";
@@ -922,17 +944,22 @@ export default function BkbFormPage() {
                       setLineFgs(next);
                     }}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full min-w-[12rem]">
                       <SelectValue placeholder="Pilih No. BTB">
-                        {line.btbNo || undefined}
+                        {line.btbId
+                          ? formatBtbSumberLabel(
+                              line.btbNo,
+                              line.btbTanggalTerima,
+                            )
+                          : undefined}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,28rem)]">
                       {fgSources
                         .filter((s) => s.refId === line.fgId)
                         .map((s) => (
                           <SelectItem key={s.key} value={s.btbId}>
-                            {s.btbNo} · tgl {s.tanggalTerima}
+                            {formatBtbSumberLabel(s.btbNo, s.tanggalTerima)}
                           </SelectItem>
                         ))}
                     </SelectContent>
@@ -950,9 +977,17 @@ export default function BkbFormPage() {
                     }}
                   />
                 </div>
-                <div>
+                <div className="min-w-[7rem]">
                   <Label className="text-xs">Tgl Terima BTB</Label>
-                  <Input value={line.btbTanggalTerima} disabled />
+                  <Input
+                    className="min-w-[7rem] tabular-nums"
+                    value={
+                      line.btbTanggalTerima
+                        ? formatDateShort(line.btbTanggalTerima)
+                        : ""
+                    }
+                    disabled
+                  />
                 </div>
                 <div className="flex items-end">
                   <Button

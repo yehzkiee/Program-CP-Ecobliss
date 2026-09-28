@@ -34,10 +34,10 @@ export const colGroupBatchHistory = [
 
 /** BTB/BKB line items in view mode. */
 export const colGroupDocLineItems = [
-  "w-[30%]",
-  "w-[16%]",
+  "w-[28%]",
+  "w-[22%]",
   "w-[12%]",
-  "w-[18%]",
+  "w-[16%]",
   "w-auto",
 ] as const;
 

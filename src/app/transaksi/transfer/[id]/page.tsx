@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDocNo } from "@/lib/mock/data";
+import { formatDocNo, applyTransferToBtbs, reverseTransferOnBtbs } from "@/lib/mock/data";
 import { useAuthStore, useDataStore } from "@/lib/store";
 import type { TransferGudang, TransferLine } from "@/lib/types";
 import { todayISO, uid, formatDateID } from "@/lib/utils";
@@ -33,6 +33,18 @@ function cloneLines(lines: TransferLine[]) {
   return lines.map((l) => ({ ...l }));
 }
 
+function toStockLines(lines: TransferLine[]) {
+  return lines.map((l) => ({
+    jenis: l.jenis,
+    refId: l.refId,
+    qty: l.qty,
+    dariGudangId: l.dariGudangId,
+    keGudangId: l.keGudangId,
+    kode: l.kode,
+    nama: l.nama,
+  }));
+}
+
 const jenisLabel: Record<TransferLine["jenis"], string> = {
   item: "Material Item",
   fg: "Finish Good",
@@ -43,6 +55,7 @@ export default function TransferFormPage() {
   const isNew = params.id === "baru";
   const router = useRouter();
   const transfers = useDataStore((s) => s.transfers);
+  const btbs = useDataStore((s) => s.btbs);
   const items = useDataStore((s) => s.items);
   const finishGoods = useDataStore((s) => s.finishGoods);
   const gudangList = useDataStore((s) => s.gudangList);
@@ -130,6 +143,52 @@ export default function TransferFormPage() {
   }
 
   function save() {
+    if (lines.length === 0) {
+      toast.error("Minimal satu baris transfer");
+      return;
+    }
+    for (const line of lines) {
+      if (!line.refId) {
+        toast.error("Setiap baris wajib memilih barang");
+        return;
+      }
+      if (line.qty <= 0) {
+        toast.error("Qty transfer harus lebih dari 0");
+        return;
+      }
+      if (!line.dariGudangId || !line.keGudangId) {
+        toast.error("Gudang asal dan tujuan wajib diisi");
+        return;
+      }
+      if (line.dariGudangId === line.keGudangId) {
+        toast.error("Gudang asal dan tujuan tidak boleh sama");
+        return;
+      }
+    }
+
+    // Stok aktual = qtySisa pada BTB. Transfer harus mengurangi asal + menambah tujuan.
+    let nextBtbs = structuredClone(btbs);
+    if (existing) {
+      const reversed = reverseTransferOnBtbs(
+        nextBtbs,
+        toStockLines(existing.lines),
+      );
+      if (!reversed.ok) {
+        toast.error(
+          `Gagal membatalkan transfer lama: ${reversed.error}`,
+        );
+        return;
+      }
+      nextBtbs = reversed.btbs;
+    }
+
+    const moved = applyTransferToBtbs(nextBtbs, toStockLines(lines));
+    if (!moved.ok) {
+      toast.error(moved.error);
+      return;
+    }
+    useDataStore.setState({ btbs: moved.btbs });
+
     const payload: TransferGudang = {
       id: existing?.id ?? uid("tf"),
       no: existing?.no ?? formatDocNo(tanggal, transfers.length + 1),
@@ -143,13 +202,25 @@ export default function TransferFormPage() {
       waktu: new Date().toISOString(),
       userId: user?.id ?? "local",
       userNama: user?.nama ?? "User",
-      aksi: "Transfer Gudang",
+      aksi: existing ? "Edit Transfer Gudang" : "Transfer Gudang",
       detail: payload.no,
     });
-    toast.success("Transfer disimpan");
+    toast.success("Transfer disimpan — stok antar gudang sudah diperbarui");
     setBaseline(null);
     setEditing(false);
     router.push(`/transaksi/transfer/${payload.id}`);
+  }
+
+  if (!isNew && !existing) {
+    return (
+      <div>
+        <BackLink href="/transaksi/transfer" />
+        <PageHeader
+          title="Transfer tidak ditemukan"
+          description="Dokumen yang diminta tidak ada di data."
+        />
+      </div>
+    );
   }
 
   return (
@@ -157,7 +228,7 @@ export default function TransferFormPage() {
       {confirmDialog}
       <BackLink href="/transaksi/transfer" />
       <PageHeader
-        title={isNew ? "Buat Transfer" : `Transfer ${existing?.no}`}
+        title={isNew ? "Buat Transfer" : `Transfer ${existing?.no ?? ""}`}
         description={
           isViewMode
             ? "Detail pemindahan barang antar gudang. Setiap baris menjelaskan barang mana dipindah dari gudang asal ke gudang tujuan."
