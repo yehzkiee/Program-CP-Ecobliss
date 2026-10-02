@@ -47,7 +47,7 @@ export default function BtbListPage() {
               <TableHead>No. BTB</TableHead>
               <TableHead>Tgl Terima</TableHead>
               <TableHead>Jenis Transaksi</TableHead>
-              <TableHead>Item / FG</TableHead>
+              <TableHead>Material / FG</TableHead>
               <TableHead className="text-right" />
             </TableRow>
           </TableHeader>
@@ -65,7 +65,7 @@ export default function BtbListPage() {
                 <TableCell>{formatDateID(b.tanggalTerima)}</TableCell>
                 <TableCell>{jenisMap[b.jenisTransaksiId]?.nama ?? "-"}</TableCell>
                 <TableCell>
-                  {b.items.length} item · {b.fgs.length} FG
+                  {b.items.length} material · {b.fgs.length} FG
                 </TableCell>
                 <TableCell className="text-right">
                   <Button

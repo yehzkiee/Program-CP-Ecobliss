@@ -213,6 +213,7 @@ export default function CustomerDetailPage() {
               nama: i.nama,
               status: i.status,
               href: `/master/item/${i.id}`,
+              jenis: "item" as const,
             }))}
             emptyMessage="Belum ada material."
           />
@@ -229,6 +230,7 @@ export default function CustomerDetailPage() {
               nama: f.nama,
               status: f.status,
               href: `/master/finish-good/${f.id}`,
+              jenis: "fg" as const,
             }))}
             emptyMessage="Belum ada finish good."
           />
@@ -286,7 +288,7 @@ export default function CustomerDetailPage() {
                       {jenisMap[b.jenisTransaksiId]?.nama ?? "-"}
                     </TableCell>
                     <TableCell className="px-4 py-3 text-sm text-gray-600">
-                      {b.items.length} item · {b.fgs.length} FG
+                      {b.items.length} material · {b.fgs.length} FG
                     </TableCell>
                   </TableRow>
                 ))
@@ -353,7 +355,7 @@ export default function CustomerDetailPage() {
                       {b.noSpk || "-"}
                     </TableCell>
                     <TableCell className="px-4 py-3 text-sm text-gray-600">
-                      {b.items.length} item · {b.fgs.length} FG
+                      {b.items.length} material · {b.fgs.length} FG
                     </TableCell>
                   </TableRow>
                 ))

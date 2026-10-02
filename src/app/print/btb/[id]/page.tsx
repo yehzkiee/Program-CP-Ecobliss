@@ -10,6 +10,7 @@ import {
   PrintTable,
   formatQty,
 } from "@/components/print/print-document";
+import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
 import { findItem, findFinishGood } from "@/lib/mock/data";
 import { useDataStore } from "@/lib/store";
 import { formatDateID } from "@/lib/utils";
@@ -62,7 +63,7 @@ export default function PrintBtbPage() {
     const item = findItem(l.itemId, items);
     return [
       item?.kode ?? "-",
-      item?.nama ?? "-",
+      <ItemNameWithType jenis="item">{item?.nama ?? "-"}</ItemNameWithType>,
       l.batchCustomer || "-",
       formatQty(l.qty, l.satuan),
       gudangMap[l.gudangId]?.nama ?? "-",
@@ -73,7 +74,7 @@ export default function PrintBtbPage() {
     const fg = findFinishGood(l.fgId, fgs);
     return [
       fg?.kode ?? "-",
-      fg?.nama ?? "-",
+      <ItemNameWithType jenis="fg">{fg?.nama ?? "-"}</ItemNameWithType>,
       l.batchCustomer || "-",
       formatQty(l.qty, l.satuan),
       gudangMap[l.gudangId]?.nama ?? "-",
@@ -106,7 +107,7 @@ export default function PrintBtbPage() {
         }
       />
 
-      <PrintTable title="Item" columns={ITEM_COLS} rows={itemRows} />
+      <PrintTable title="Material" columns={ITEM_COLS} rows={itemRows} />
       <PrintTable title="Finish Good" columns={ITEM_COLS} rows={fgRows} />
       <PrintSignatures />
     </PrintShell>

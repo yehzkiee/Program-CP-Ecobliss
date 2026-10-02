@@ -36,7 +36,7 @@ const nav = [
     label: "Master Data",
     items: [
       { href: "/master/customer", label: "Customer", icon: Users },
-      { href: "/master/item", label: "Material (Item)", icon: Package },
+      { href: "/master/item", label: "Material", icon: Package },
       { href: "/master/finish-good", label: "Finish Good", icon: Boxes },
       { href: "/master/bom", label: "BOM", icon: ClipboardList },
     ],

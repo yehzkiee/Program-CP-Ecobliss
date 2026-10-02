@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
+import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
 import { BackLink, PageHeader } from "@/components/shared/page-header";
 import { DetailField } from "@/components/shared/detail-field";
 import { Button } from "@/components/ui/button";
@@ -45,11 +46,6 @@ function toStockLines(lines: TransferLine[]) {
   }));
 }
 
-const jenisLabel: Record<TransferLine["jenis"], string> = {
-  item: "Material Item",
-  fg: "Finish Good",
-};
-
 export default function TransferFormPage() {
   const params = useParams<{ id: string }>();
   const isNew = params.id === "baru";
@@ -78,7 +74,7 @@ export default function TransferFormPage() {
 
   const jenisSelectItems = useMemo(
     () => [
-      { value: "item", label: "Material Item" },
+      { value: "item", label: "Material" },
       { value: "fg", label: "Finish Good" },
     ],
     [],
@@ -317,10 +313,17 @@ export default function TransferFormPage() {
                 key={idx}
                 className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-4"
               >
-                <DetailField label="Jenis" value={jenisLabel[line.jenis]} />
+                <DetailField
+                  label="Jenis"
+                  value={<ItemTypeBadge jenis={line.jenis} />}
+                />
                 <DetailField
                   label="Barang"
-                  value={`${line.kode} - ${line.nama}`}
+                  value={
+                    <ItemNameWithType jenis={line.jenis}>
+                      {line.kode} - {line.nama}
+                    </ItemNameWithType>
+                  }
                   className="sm:col-span-2 lg:col-span-1"
                 />
                 <DetailField label="Qty" value={line.qty} />
@@ -366,7 +369,7 @@ export default function TransferFormPage() {
                       <SelectValue placeholder="Pilih jenis" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="item">Material Item</SelectItem>
+                      <SelectItem value="item">Material</SelectItem>
                       <SelectItem value="fg">Finish Good</SelectItem>
                     </SelectContent>
                   </Select>
@@ -395,13 +398,27 @@ export default function TransferFormPage() {
                     }}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Pilih barang" />
+                      <SelectValue placeholder="Pilih barang">
+                        {(value: string | null) => {
+                          const ref = (
+                            line.jenis === "item" ? items : finishGoods
+                          ).find((row) => row.id === value);
+                          if (!ref) return "Pilih barang";
+                          return (
+                            <ItemNameWithType jenis={line.jenis}>
+                              {ref.kode} - {ref.nama}
+                            </ItemNameWithType>
+                          );
+                        }}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {(line.jenis === "item" ? items : finishGoods).map(
                         (r) => (
                           <SelectItem key={r.id} value={r.id}>
-                            {r.kode} - {r.nama}
+                            <ItemNameWithType jenis={line.jenis}>
+                              {r.kode} - {r.nama}
+                            </ItemNameWithType>
                           </SelectItem>
                         ),
                       )}

@@ -7,6 +7,7 @@ import {
   PrintShell,
   PrintTable,
 } from "@/components/print/print-document";
+import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
 import { buildStockRows } from "@/lib/mock/data";
 import { useDataStore } from "@/lib/store";
 
@@ -27,6 +28,7 @@ export default function PrintOpnameRekapPage() {
   const btbs = useDataStore((s) => s.btbs);
   const bkbs = useDataStore((s) => s.bkbs);
   const transfers = useDataStore((s) => s.transfers);
+  const adjustments = useDataStore((s) => s.adjustments);
   const stock = useMemo(
     () =>
       buildStockRows({
@@ -37,8 +39,18 @@ export default function PrintOpnameRekapPage() {
         btbs,
         bkbs,
         transfers,
+        adjustments,
       }),
-    [customers, gudangList, items, finishGoods, btbs, bkbs, transfers],
+    [
+      customers,
+      gudangList,
+      items,
+      finishGoods,
+      btbs,
+      bkbs,
+      transfers,
+      adjustments,
+    ],
   );
 
   const aggregated = useMemo(() => {
@@ -76,7 +88,7 @@ export default function PrintOpnameRekapPage() {
     .filter((r) => r.jenis === "item")
     .map((r) => [
       r.kode,
-      r.nama,
+      <ItemNameWithType jenis="item">{r.nama}</ItemNameWithType>,
       custMap[r.customerId]?.nama ?? "-",
       gudangMap[r.gudangId]?.nama ?? "-",
       String(r.qty),
@@ -86,7 +98,7 @@ export default function PrintOpnameRekapPage() {
     .filter((r) => r.jenis === "fg")
     .map((r) => [
       r.kode,
-      r.nama,
+      <ItemNameWithType jenis="fg">{r.nama}</ItemNameWithType>,
       custMap[r.customerId]?.nama ?? "-",
       gudangMap[r.gudangId]?.nama ?? "-",
       String(r.qty),
@@ -106,7 +118,7 @@ export default function PrintOpnameRekapPage() {
         meta="Acuan pengecekan fisik per gudang & customer"
       />
 
-      <PrintTable title="Part Item" columns={REKAP_COLS} rows={itemRows} />
+      <PrintTable title="Part Material" columns={REKAP_COLS} rows={itemRows} />
       <PrintTable
         title="Part Finish Good"
         columns={REKAP_COLS}

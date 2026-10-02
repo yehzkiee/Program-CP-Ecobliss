@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
+import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -66,16 +67,19 @@ export default function TransferListPage() {
                 <TableCell>{t.no}</TableCell>
                 <TableCell>{formatDateID(t.tanggal)}</TableCell>
                 <TableCell className="max-w-md whitespace-normal text-sm text-muted-foreground">
-                  {t.lines
-                    .slice(0, 2)
-                    .map((l) => {
-                      const dari = gudangMap[l.dariGudangId];
-                      const ke = gudangMap[l.keGudangId];
-                      const dariHint = gudangHint(dari?.tipe);
-                      const keHint = gudangHint(ke?.tipe);
-                      return `${l.nama} dipindah dari ${dari?.nama ?? "-"}${dariHint ? ` (${dariHint})` : ""} ke ${ke?.nama ?? "-"}${keHint ? ` (${keHint})` : ""}`;
-                    })
-                    .join("; ")}
+                  {t.lines.slice(0, 2).map((l, index) => {
+                    const dari = gudangMap[l.dariGudangId];
+                    const ke = gudangMap[l.keGudangId];
+                    const dariHint = gudangHint(dari?.tipe);
+                    const keHint = gudangHint(ke?.tipe);
+                    return (
+                      <span key={`${l.refId}-${index}`}>
+                        {index > 0 ? "; " : null}
+                        <ItemNameWithType jenis={l.jenis}>{l.nama}</ItemNameWithType>
+                        {` dipindah dari ${dari?.nama ?? "-"}${dariHint ? ` (${dariHint})` : ""} ke ${ke?.nama ?? "-"}${keHint ? ` (${keHint})` : ""}`}
+                      </span>
+                    );
+                  })}
                   {t.lines.length > 2 ? ` (+${t.lines.length - 2} baris)` : ""}
                 </TableCell>
                 <TableCell>{t.keterangan || "-"}</TableCell>

@@ -32,7 +32,8 @@ import {
   tableHeadCellRightClass,
   tableShellClass,
 } from "@/lib/table-styles";
-import { todayISO, uid, isSuperAdmin, cn, formatJenisBarang } from "@/lib/utils";
+import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
+import { todayISO, uid, isSuperAdmin, cn } from "@/lib/utils";
 
 const NO_SO = "__none__";
 
@@ -98,13 +99,15 @@ function AdjustmentFormInner() {
         .filter((item) => item.status === "aktif")
         .map((item) => ({
           value: `item:${item.id}`,
-          label: `${item.kode} - ${item.nama} (Material)`,
+          label: `${item.kode} - ${item.nama}`,
+          jenis: "item" as const,
         })),
       ...finishGoods
         .filter((fg) => fg.status === "aktif")
         .map((fg) => ({
           value: `fg:${fg.id}`,
-          label: `${fg.kode} - ${fg.nama} (Finish Good)`,
+          label: `${fg.kode} - ${fg.nama}`,
+          jenis: "fg" as const,
         })),
     ];
     return rows.sort((a, b) => a.label.localeCompare(b.label, "id"));
@@ -206,7 +209,7 @@ function AdjustmentFormInner() {
 
   function save(nextStatus: Adjustment["status"] = "menunggu_approval") {
     if (lines.length === 0) {
-      toast.error("Tambahkan minimal satu baris item");
+      toast.error("Tambahkan minimal satu baris material");
       return;
     }
     if (lines.some((line) => !line.refId || (line.in <= 0 && line.out <= 0))) {
@@ -347,12 +350,24 @@ function AdjustmentFormInner() {
                   items={productOptions}
                 >
                   <SelectTrigger className="bg-white">
-                    <SelectValue placeholder="Pilih Material atau Finish Good..." />
+                    <SelectValue placeholder="Pilih Material atau Finish Good...">
+                      {(value: string | null) => {
+                        const option = productOptions.find((row) => row.value === value);
+                        if (!option) return "Pilih Material atau Finish Good...";
+                        return (
+                          <ItemNameWithType jenis={option.jenis}>
+                            {option.label}
+                          </ItemNameWithType>
+                        );
+                      }}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,36rem)]">
                     {productOptions.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
-                        {option.label}
+                        <ItemNameWithType jenis={option.jenis}>
+                          {option.label}
+                        </ItemNameWithType>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -365,7 +380,7 @@ function AdjustmentFormInner() {
                 onClick={addManualLine}
               >
                 <Plus className="mr-1 size-4" />
-                Tambah Baris Item
+                Tambah Baris Material
               </Button>
             </div>
           )}
@@ -402,7 +417,7 @@ function AdjustmentFormInner() {
               {lines.map((l, idx) => (
                 <tr key={`${l.jenis}-${l.refId}-${idx}`} className="border-b last:border-0">
                   <td className={tableBodyCellClass}>
-                    {formatJenisBarang(l.jenis)}
+                    <ItemTypeBadge jenis={l.jenis} />
                   </td>
                   <td className={tableBodyCellClass}>{l.kode}</td>
                   <td className={`${tableBodyCellClass} whitespace-normal`}>
@@ -467,7 +482,9 @@ function AdjustmentFormInner() {
               {lines.map((l, idx) => (
                 <li key={idx} className="flex flex-wrap items-baseline gap-x-2">
                   <span className="text-slate-800">
-                    {l.kode} - {l.nama}:
+                    <ItemNameWithType jenis={l.jenis}>
+                      {l.kode} - {l.nama}:
+                    </ItemNameWithType>
                   </span>
                   <span
                     className={cn(

@@ -48,7 +48,7 @@ export const customers: Customer[] = [
 ];
 
 export const gudangList: Gudang[] = [
-  { id: "g1", kode: "GD-ITEM", nama: "Gudang Item", tipe: "item" },
+  { id: "g1", kode: "GD-ITEM", nama: "Gudang Material", tipe: "item" },
   { id: "g2", kode: "GD-FG", nama: "Gudang FG", tipe: "fg" },
   { id: "g3", kode: "GD-WIP", nama: "Gudang WIP", tipe: "wip" },
   { id: "g4", kode: "GD-REJ", nama: "Gudang Reject", tipe: "reject" },
@@ -364,7 +364,7 @@ export const stockOpnames: StockOpname[] = [
     id: "so1",
     no: "260913-00001",
     tanggal: "2026-09-13",
-    keterangan: "Opname bulanan Gudang Item",
+    keterangan: "Opname bulanan Gudang Material",
     metode: "per_item",
     createdAt: "2026-09-13T07:00:00",
     lines: [
@@ -432,7 +432,7 @@ export const transfers: TransferGudang[] = [
     id: "tf-karton",
     no: "260912-00004",
     tanggal: "2026-09-12",
-    keterangan: "Pindah Karton dari Gudang Item ke Gudang FG",
+    keterangan: "Pindah Karton dari Gudang Material ke Gudang FG",
     createdAt: "2026-09-12T15:00:00",
     lines: [
       {
@@ -519,8 +519,13 @@ function addLotQty(lots: StockLot[], incoming: StockLot) {
   lots.push(incoming);
 }
 
+/** Adjustment mengubah stok hanya setelah status Disetujui. Menunggu Approval / Pending diabaikan. */
+export function isApprovedAdjustment(status?: string | null) {
+  return status === "disetujui";
+}
+
 /**
- * Stok gudang = BTB masuk − BKB keluar + transfer masuk − transfer keluar.
+ * Stok gudang = BTB masuk − BKB keluar + transfer + adjustment yang sudah disetujui.
  * Baris BTB yang lahir dari transfer tidak dihitung lagi sebagai penerimaan.
  */
 export function buildStockRows(input?: {
@@ -531,6 +536,7 @@ export function buildStockRows(input?: {
   btbs?: Btb[];
   bkbs?: Bkb[];
   transfers?: TransferGudang[];
+  adjustments?: Adjustment[];
 }): StockRow[] {
   const custs = input?.customers ?? customers;
   const gudangs = input?.gudangList ?? gudangList;
@@ -539,6 +545,7 @@ export function buildStockRows(input?: {
   const docs = input?.btbs ?? btbs;
   const bkbDocs = input?.bkbs ?? bkbs;
   const transferDocs = input?.transfers ?? transfers;
+  const adjustmentDocs = input?.adjustments ?? adjustments;
 
   const custMap = Object.fromEntries(custs.map((c) => [c.id, c]));
   const gudangMap = Object.fromEntries(gudangs.map((g) => [g.id, g]));
@@ -577,7 +584,8 @@ export function buildStockRows(input?: {
   type StockEvent =
     | { at: string; rank: number; kind: "btb"; doc: Btb }
     | { at: string; rank: number; kind: "bkb"; doc: Bkb }
-    | { at: string; rank: number; kind: "transfer"; doc: TransferGudang };
+    | { at: string; rank: number; kind: "transfer"; doc: TransferGudang }
+    | { at: string; rank: number; kind: "adjustment"; doc: Adjustment };
 
   function eventAt(date: string, createdAt?: string) {
     if (createdAt) return createdAt;
@@ -601,6 +609,12 @@ export function buildStockRows(input?: {
       at: eventAt(doc.tanggalKeluar, doc.createdAt),
       rank: 2,
       kind: "bkb" as const,
+      doc,
+    })),
+    ...adjustmentDocs.map((doc) => ({
+      at: eventAt(doc.tanggal, doc.createdAt),
+      rank: 3,
+      kind: "adjustment" as const,
       doc,
     })),
   ];
@@ -667,6 +681,38 @@ export function buildStockRows(input?: {
             lot.batchCustomer === line.batchCustomer,
           line.qty,
         );
+      }
+      continue;
+    }
+
+    if (event.kind === "adjustment") {
+      if (!isApprovedAdjustment(event.doc.status)) continue;
+      for (const line of event.doc.lines ?? []) {
+        const master =
+          line.jenis === "item" ? itemMap[line.refId] : fgMap[line.refId];
+        if (line.out > 0) {
+          takeFromLots(
+            lots,
+            (lot) => lot.jenis === line.jenis && lot.refId === line.refId,
+            line.out,
+          );
+        }
+        if (line.in > 0) {
+          const host = lots.find(
+            (lot) => lot.jenis === line.jenis && lot.refId === line.refId,
+          );
+          pushMasuk(
+            line.jenis,
+            line.refId,
+            master?.kode ?? line.kode,
+            master?.nama ?? line.nama,
+            host?.customerId || master?.customerId || "",
+            host?.gudangId || gudangs[0]?.id || "",
+            host?.batchCustomer || "",
+            line.in,
+            event.doc.tanggal,
+          );
+        }
       }
       continue;
     }

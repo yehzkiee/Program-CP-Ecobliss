@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
 import {
   Table,
   TableBody,
@@ -17,6 +18,7 @@ export type RelatedRecordRow = {
   nama: string;
   status: string;
   href: string;
+  jenis?: "item" | "fg";
 };
 
 const headerCellClass =
@@ -64,7 +66,7 @@ export function RelatedRecordTable({
                 </Link>
               </TableCell>
               <TableCell className={`whitespace-normal ${bodyCellClass}`}>
-                {row.nama}
+                <ItemNameWithType jenis={row.jenis}>{row.nama}</ItemNameWithType>
               </TableCell>
               <TableCell className={bodyCellClass}>
                 {formatStatusLabel(row.status)}

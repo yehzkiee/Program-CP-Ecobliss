@@ -69,7 +69,7 @@ export default function StockOpnameListPage() {
             <TableRow>
               <TableHead>No. SO</TableHead>
               <TableHead>Tanggal</TableHead>
-              <TableHead>Item dengan Selisih</TableHead>
+              <TableHead>Material dengan Selisih</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Adjustment</TableHead>
               <TableHead className="text-right" />

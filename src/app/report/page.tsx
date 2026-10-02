@@ -29,16 +29,18 @@ import {
 } from "@/components/ui/table";
 import {
   buildStockRows,
+  isApprovedAdjustment,
   findFinishGood,
   findItem,
   isTransferGeneratedBtbLine,
 } from "@/lib/mock/data";
+import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
 import { useDataStore } from "@/lib/store";
+import type { AdjustmentStatus } from "@/lib/types";
 import {
   formatDateID,
   formatStatusLabel,
   formatKodeNama,
-  formatJenisBarang,
   formatQty,
 } from "@/lib/utils";
 
@@ -59,6 +61,8 @@ type HistoriRow = {
   /** Hanya terisi untuk baris Material (item). */
   materialId?: string;
   href?: string;
+  /** Hanya terisi untuk baris Adjustment. */
+  adjustmentStatus?: AdjustmentStatus;
 };
 
 const reportGroups: { label: string; items: ReportItem[] }[] = [
@@ -67,7 +71,7 @@ const reportGroups: { label: string; items: ReportItem[] }[] = [
     items: [
       { id: "stock", label: "Stock" },
       { id: "per-customer", label: "Per Customer" },
-      { id: "per-item", label: "Per Item" },
+      { id: "per-item", label: "Per Material" },
       { id: "per-fg", label: "Per FG" },
       { id: "per-batch", label: "Per Batch" },
       { id: "per-gudang", label: "Per Gudang" },
@@ -89,6 +93,12 @@ function inDateRange(tanggal: string, from: string, to: string) {
   if (from && tanggal < from) return false;
   if (to && tanggal > to) return false;
   return true;
+}
+
+/** Adjustment baru mengubah saldo setelah statusnya Disetujui. */
+function countsTowardStock(row: HistoriRow) {
+  if (row.jenis !== "Adjustment") return true;
+  return isApprovedAdjustment(row.adjustmentStatus);
 }
 
 function movementDelta(
@@ -133,8 +143,18 @@ export default function ReportPage() {
         btbs,
         bkbs,
         transfers,
+        adjustments,
       }),
-    [customers, items, finishGoods, gudangList, btbs, bkbs, transfers],
+    [
+      customers,
+      items,
+      finishGoods,
+      gudangList,
+      btbs,
+      bkbs,
+      transfers,
+      adjustments,
+    ],
   );
 
   const filteredStock = useMemo(() => {
@@ -168,7 +188,7 @@ export default function ReportPage() {
 
   const materialFilterItems = useMemo(
     () => [
-      { value: "all", label: "Semua Material/Item" },
+      { value: "all", label: "Semua Material" },
       ...items.map((i) => ({
         value: i.id,
         label: formatKodeNama(i.kode, i.nama),
@@ -307,6 +327,7 @@ export default function ReportPage() {
           satuan,
           materialId: line.jenis === "item" ? line.refId : undefined,
           href: `/transaksi/adjustment/${a.id}`,
+          adjustmentStatus: a.status,
         });
       });
     }
@@ -320,6 +341,11 @@ export default function ReportPage() {
       if (filterMaterial !== "all" && h.materialId !== filterMaterial) {
         return false;
       }
+      const menungguApproval =
+        h.jenis === "Adjustment" &&
+        (h.adjustmentStatus === "menunggu_approval" ||
+          h.keterangan.toLowerCase().includes("menunggu approval"));
+      if (menungguApproval) return false;
       return true;
     });
   }, [histori, filterMaterial, dateFrom, dateTo]);
@@ -329,10 +355,17 @@ export default function ReportPage() {
       filterMaterial === "all" || row.materialId === filterMaterial;
     const stokAwal = dateFrom
       ? histori
-          .filter((row) => matchesMaterial(row) && row.tanggal < dateFrom)
+          .filter(
+            (row) =>
+              matchesMaterial(row) &&
+              row.tanggal < dateFrom &&
+              countsTowardStock(row),
+          )
           .reduce((sum, row) => sum + row.delta, 0)
       : 0;
-    const mutasi = filteredHistori.reduce((sum, row) => sum + row.delta, 0);
+    const mutasi = filteredHistori
+      .filter(countsTowardStock)
+      .reduce((sum, row) => sum + row.delta, 0);
     return { stokAwal, stokAkhir: stokAwal + mutasi };
   }, [histori, filteredHistori, filterMaterial, dateFrom]);
 
@@ -469,7 +502,7 @@ export default function ReportPage() {
         )}
         {tab === "per-item" && (
           <SimpleGroupTable
-            title="Item"
+            title="Material"
             rows={groupSum((r) =>
               r.jenis === "item" ? formatKodeNama(r.kode, r.nama) : "",
             ).filter((r) => r.key)}
@@ -496,20 +529,33 @@ export default function ReportPage() {
           <div className="space-y-4">
             <div className="grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-2 sm:col-span-2 lg:col-span-2">
-                <Label>Pilih Material/Item</Label>
+                <Label>Pilih Material</Label>
                 <Select
                   value={filterMaterial}
                   onValueChange={(v) => setFilterMaterial(v ?? "all")}
                   items={materialFilterItems}
                 >
                   <SelectTrigger className="w-full bg-white">
-                    <SelectValue placeholder="Pilih Material/Item" />
+                    <SelectValue placeholder="Pilih Material">
+                      {(value: string | null) => {
+                        if (!value || value === "all") return "Semua Material";
+                        const item = items.find((row) => row.id === value);
+                        if (!item) return null;
+                        return (
+                          <ItemNameWithType jenis="item">
+                            {item.kode} - {item.nama}
+                          </ItemNameWithType>
+                        );
+                      }}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,28rem)]">
-                    <SelectItem value="all">Semua Material/Item</SelectItem>
+                    <SelectItem value="all">Semua Material</SelectItem>
                     {items.map((i) => (
                       <SelectItem key={i.id} value={i.id}>
-                        {i.kode} - {i.nama}
+                        <ItemNameWithType jenis="item">
+                          {i.kode} - {i.nama}
+                        </ItemNameWithType>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -563,10 +609,12 @@ export default function ReportPage() {
 }
 
 function netMutasi(rows: HistoriRow[]) {
-  const net = rows.reduce((sum, row) => sum + row.delta, 0);
+  const net = rows
+    .filter(countsTowardStock)
+    .reduce((sum, row) => sum + row.delta, 0);
   const units = new Set(
     rows
-      .filter((row) => row.delta !== 0)
+      .filter((row) => countsTowardStock(row) && row.delta !== 0)
       .map((row) => (row.satuan ?? "").trim())
       .filter(Boolean),
   );
@@ -636,7 +684,14 @@ function HistoriTable({
             </TableRow>
           ) : (
             rows.map((h) => (
-              <TableRow key={h.id}>
+              <TableRow
+                key={h.id}
+                className={
+                  h.adjustmentStatus === "menunggu_approval"
+                    ? "text-muted-foreground opacity-60"
+                    : undefined
+                }
+              >
                 <TableCell>{formatDateID(h.tanggal)}</TableCell>
                 <TableCell>{h.jenis}</TableCell>
                 <TableCell className="font-medium">{h.no}</TableCell>
@@ -754,7 +809,9 @@ function StockTable({
         <TableBody>
           {rows.map((r, i) => (
             <TableRow key={i}>
-              <TableCell>{formatJenisBarang(r.jenis)}</TableCell>
+              <TableCell>
+                <ItemTypeBadge jenis={r.jenis} />
+              </TableCell>
               <TableCell>{r.kode}</TableCell>
               <TableCell>{r.nama}</TableCell>
               <TableCell>{r.customerNama}</TableCell>

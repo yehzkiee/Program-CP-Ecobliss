@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
+import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
 import {
   BackLink,
   PageHeader,
@@ -111,7 +112,7 @@ export default function ItemDetailPage() {
     const target = item!;
     askConfirm(() => {
       remove(target.id);
-      toast.success("Item dihapus");
+      toast.success("Material dihapus");
       router.push("/master/item");
     });
   }
@@ -121,7 +122,7 @@ export default function ItemDetailPage() {
       {confirmDialog}
       <BackLink href="/master/item" />
       <PageHeader
-        title={item.nama}
+        title={<ItemNameWithType jenis="item">{item.nama}</ItemNameWithType>}
         description={`Kode ${item.kode}`}
         action={
           <div className="flex flex-wrap gap-2">
@@ -360,7 +361,10 @@ export default function ItemDetailPage() {
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <DetailField label="Kode" value={item.kode} />
-              <DetailField label="Nama" value={item.nama} />
+              <DetailField
+                label="Nama"
+                value={<ItemNameWithType jenis="item">{item.nama}</ItemNameWithType>}
+              />
               <DetailField
                 label="Customer"
                 value={

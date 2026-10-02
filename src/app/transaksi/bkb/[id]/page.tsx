@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Trash2, Wand2 } from "lucide-react";
+import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
 import { BackLink, PageHeader } from "@/components/shared/page-header";
 import { DetailField, DocLink } from "@/components/shared/detail-field";
 import { Button } from "@/components/ui/button";
@@ -163,7 +164,7 @@ export default function BkbFormPage() {
           tanggalTerima: btb.tanggalTerima,
           jenis: "item",
           refId: line.itemId,
-          label: `${btb.no} · ${item ? formatKodeNama(item.kode, item.nama) : "Item"} (sisa ${line.qtySisa})`,
+          label: `${btb.no} · ${item ? formatKodeNama(item.kode, item.nama) : "Material"} (sisa ${line.qtySisa})`,
           batchCustomer: line.batchCustomer,
           satuan: line.satuan,
           gudangId: line.gudangId,
@@ -268,7 +269,7 @@ export default function BkbFormPage() {
   function addManualItem() {
     const src = sources.find((s) => s.jenis === "item");
     if (!src) {
-      toast.error("Tidak ada stok item di gudang ini");
+      toast.error("Tidak ada stok material di gudang ini");
       return;
     }
     setLineItems([
@@ -341,7 +342,7 @@ export default function BkbFormPage() {
     }
     for (const line of lineItems) {
       if (!line.btbId) {
-        toast.error("Setiap baris Item wajib punya No. BTB");
+        toast.error("Setiap baris Material wajib punya No. BTB");
         return;
       }
     }
@@ -618,16 +619,16 @@ export default function BkbFormPage() {
 
       <Card className="mb-4 border-border/80 bg-white shadow-none">
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Item</CardTitle>
+          <CardTitle className="text-base">Material</CardTitle>
           {!isView && (
             <Button size="sm" variant="outline" onClick={addManualItem}>
-              <Plus className="mr-1 size-4" /> Baris Item
+              <Plus className="mr-1 size-4" /> Baris Material
             </Button>
           )}
         </CardHeader>
         <CardContent className="space-y-3">
           {lineItems.length === 0 && isView && (
-            <p className="text-sm text-muted-foreground">Belum ada baris item.</p>
+            <p className="text-sm text-muted-foreground">Belum ada baris material.</p>
           )}
           {lineItems.map((line, idx) =>
             isView ? (
@@ -636,12 +637,16 @@ export default function BkbFormPage() {
                 className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-4"
               >
                 <DetailField
-                  label="Nama Item"
+                  label="Nama Material"
                   value={(() => {
                     const item = findItem(line.itemId, items);
-                    return item
-                      ? formatKodeNama(item.kode, item.nama)
-                      : line.itemId || "-";
+                    return item ? (
+                      <ItemNameWithType jenis="item">
+                        {formatKodeNama(item.kode, item.nama)}
+                      </ItemNameWithType>
+                    ) : (
+                      line.itemId || "-"
+                    );
                   })()}
                 />
                 <DetailField
@@ -680,7 +685,7 @@ export default function BkbFormPage() {
                 className="grid gap-2 rounded-lg border p-3 lg:grid-cols-8"
               >
                 <div className="lg:col-span-2">
-                  <Label className="text-xs">Nama Item</Label>
+                  <Label className="text-xs">Nama Material</Label>
                   <Select
                     value={line.itemId}
                     items={itemSelectItems}
@@ -704,19 +709,23 @@ export default function BkbFormPage() {
                     }}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Pilih item">
+                      <SelectValue placeholder="Pilih material">
                         {(() => {
                           const item = findItem(line.itemId, items);
-                          return item
-                            ? formatKodeNama(item.kode, item.nama)
-                            : undefined;
+                          return item ? (
+                            <ItemNameWithType jenis="item">
+                              {formatKodeNama(item.kode, item.nama)}
+                            </ItemNameWithType>
+                          ) : undefined;
                         })()}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {items.map((i) => (
                         <SelectItem key={i.id} value={i.id}>
-                          {i.kode} - {i.nama}
+                          <ItemNameWithType jenis="item">
+                            {i.kode} - {i.nama}
+                          </ItemNameWithType>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -836,9 +845,13 @@ export default function BkbFormPage() {
                   label="Nama Finish Good"
                   value={(() => {
                     const fg = findFinishGood(line.fgId, finishGoods);
-                    return fg
-                      ? formatKodeNama(fg.kode, fg.nama)
-                      : line.fgId || "-";
+                    return fg ? (
+                      <ItemNameWithType jenis="fg">
+                        {formatKodeNama(fg.kode, fg.nama)}
+                      </ItemNameWithType>
+                    ) : (
+                      line.fgId || "-"
+                    );
                   })()}
                 />
                 <DetailField
@@ -904,16 +917,20 @@ export default function BkbFormPage() {
                       <SelectValue placeholder="Pilih FG">
                         {(() => {
                           const fg = findFinishGood(line.fgId, finishGoods);
-                          return fg
-                            ? formatKodeNama(fg.kode, fg.nama)
-                            : undefined;
+                          return fg ? (
+                            <ItemNameWithType jenis="fg">
+                              {formatKodeNama(fg.kode, fg.nama)}
+                            </ItemNameWithType>
+                          ) : undefined;
                         })()}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {finishGoods.map((f) => (
                         <SelectItem key={f.id} value={f.id}>
-                          {f.kode} - {f.nama}
+                          <ItemNameWithType jenis="fg">
+                            {f.kode} - {f.nama}
+                          </ItemNameWithType>
                         </SelectItem>
                       ))}
                     </SelectContent>

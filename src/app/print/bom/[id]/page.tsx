@@ -8,6 +8,7 @@ import {
   PrintShell,
   PrintTable,
 } from "@/components/print/print-document";
+import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
 import { getLatestBomRevision } from "@/lib/mock/data";
 import { useDataStore } from "@/lib/store";
 import { formatDateID } from "@/lib/utils";
@@ -67,7 +68,7 @@ export default function PrintBomPage() {
       const item = itemMap[l.itemId];
       return [
         item?.kode ?? "-",
-        item?.nama ?? "-",
+        <ItemNameWithType jenis="item">{item?.nama ?? "-"}</ItemNameWithType>,
         String(l.qty),
         item?.uom1 ?? "-",
       ];
@@ -76,7 +77,11 @@ export default function PrintBomPage() {
   const fgRows =
     latest?.fgs.map((l) => {
       const f = fgMap[l.fgId];
-      return [f?.kode ?? "-", f?.nama ?? "-", String(l.qty)];
+      return [
+        f?.kode ?? "-",
+        <ItemNameWithType jenis="fg">{f?.nama ?? "-"}</ItemNameWithType>,
+        String(l.qty),
+      ];
     }) ?? [];
 
   return (
@@ -100,7 +105,13 @@ export default function PrintBomPage() {
 
       <p className="mb-2 text-slate-800">
         <span className="text-slate-500">Finish Good: </span>
-        {fg ? `${fg.kode} - ${fg.nama}` : "-"}
+        {fg ? (
+          <ItemNameWithType jenis="fg">
+            {fg.kode} - {fg.nama}
+          </ItemNameWithType>
+        ) : (
+          "-"
+        )}
       </p>
       {bom.keterangan ? (
         <p className="mb-6 text-slate-600">{bom.keterangan}</p>

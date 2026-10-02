@@ -15,7 +15,8 @@ import {
   tableHeadCellRightClass,
   tableShellClass,
 } from "@/lib/table-styles";
-import { formatJenisBarang, formatKodeNama } from "@/lib/utils";
+import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
+import { formatKodeNama } from "@/lib/utils";
 
 export default function DashboardPage() {
   const btbs = useDataStore((s) => s.btbs);
@@ -30,6 +31,7 @@ export default function DashboardPage() {
     btbs,
     bkbs,
     transfers,
+    adjustments,
     items,
     finishGoods: fgs,
     customers,
@@ -112,7 +114,7 @@ export default function DashboardPage() {
                 <thead>
                   <tr className="border-b bg-muted/30">
                     <th className={tableHeadCellClass}>Nama Customer</th>
-                    <th className={tableHeadCellClass}>Produk/Item</th>
+                    <th className={tableHeadCellClass}>Produk/Material</th>
                     <th className={tableHeadCellClass}>Gudang</th>
                     <th className={tableHeadCellRightClass}>Qty</th>
                   </tr>
@@ -127,10 +129,9 @@ export default function DashboardPage() {
                         {r.customerNama}
                       </td>
                       <td className={`${tableBodyCellClass} whitespace-normal`}>
-                        {formatKodeNama(r.kode, r.nama)}
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          {formatJenisBarang(r.jenis)}
-                        </span>
+                        <ItemNameWithType jenis={r.jenis}>
+                          {formatKodeNama(r.kode, r.nama)}
+                        </ItemNameWithType>
                       </td>
                       <td className={tableBodyCellMutedClass}>{r.gudangNama}</td>
                       <td className={`${tableBodyCellRightClass} font-medium`}>

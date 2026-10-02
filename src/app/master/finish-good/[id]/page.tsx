@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
+import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
 import {
   BackLink,
   PageHeader,
@@ -116,7 +117,7 @@ export default function FinishGoodDetailPage() {
       {confirmDialog}
       <BackLink href="/master/finish-good" />
       <PageHeader
-        title={fg.nama}
+        title={<ItemNameWithType jenis="fg">{fg.nama}</ItemNameWithType>}
         description={`Kode ${fg.kode}`}
         action={
           <div className="flex gap-2">
@@ -355,7 +356,10 @@ export default function FinishGoodDetailPage() {
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <DetailField label="Kode FG" value={fg.kode} />
-              <DetailField label="Nama FG" value={fg.nama} />
+              <DetailField
+                label="Nama FG"
+                value={<ItemNameWithType jenis="fg">{fg.nama}</ItemNameWithType>}
+              />
               <DetailField
                 label="Customer"
                 value={
@@ -449,12 +453,14 @@ export default function FinishGoodDetailPage() {
                               <TableRow key={line.itemId}>
                                 <TableCell>
                                   {mat ? (
-                                    <Link
-                                      href={`/master/item/${mat.id}`}
-                                      className="text-emerald-800 hover:underline"
-                                    >
-                                      {mat.kode} - {mat.nama}
-                                    </Link>
+                                    <ItemNameWithType jenis="item">
+                                      <Link
+                                        href={`/master/item/${mat.id}`}
+                                        className="text-emerald-800 hover:underline"
+                                      >
+                                        {mat.kode} - {mat.nama}
+                                      </Link>
+                                    </ItemNameWithType>
                                   ) : (
                                     line.itemId
                                   )}
@@ -491,12 +497,14 @@ export default function FinishGoodDetailPage() {
                               <TableRow key={line.fgId}>
                                 <TableCell>
                                   {child ? (
-                                    <Link
-                                      href={`/master/finish-good/${child.id}`}
-                                      className="text-emerald-800 hover:underline"
-                                    >
-                                      {child.kode} - {child.nama}
-                                    </Link>
+                                    <ItemNameWithType jenis="fg">
+                                      <Link
+                                        href={`/master/finish-good/${child.id}`}
+                                        className="text-emerald-800 hover:underline"
+                                      >
+                                        {child.kode} - {child.nama}
+                                      </Link>
+                                    </ItemNameWithType>
                                   ) : (
                                     line.fgId
                                   )}

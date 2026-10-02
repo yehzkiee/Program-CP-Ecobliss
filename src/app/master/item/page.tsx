@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
 import { PageHeader, StatusBadge } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -177,11 +178,11 @@ export default function ItemPage() {
   return (
     <div>
       <PageHeader
-        title="DB Material (Item)"
+        title="DB Material"
         description="Master material dengan customer, UOM, batch, dan status."
         action={
           <Button className="bg-emerald-700 hover:bg-emerald-800" onClick={openCreate}>
-            Tambah Item
+            Tambah Material
           </Button>
         }
       />
@@ -193,13 +194,26 @@ export default function ItemPage() {
           items={itemFilterItems}
         >
           <SelectTrigger className="w-full max-w-sm bg-white">
-            <SelectValue placeholder="Pilih Material..." />
+            <SelectValue placeholder="Pilih Material...">
+              {(value: string | null) => {
+                if (!value || value === "all") return "Semua Material";
+                const item = items.find((row) => row.id === value);
+                if (!item) return null;
+                return (
+                  <ItemNameWithType jenis="item">
+                    {item.kode} - {item.nama}
+                  </ItemNameWithType>
+                );
+              }}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Semua Material</SelectItem>
             {items.map((i) => (
               <SelectItem key={i.id} value={i.id}>
-                {i.kode} - {i.nama}
+                <ItemNameWithType jenis="item">
+                  {i.kode} - {i.nama}
+                </ItemNameWithType>
               </SelectItem>
             ))}
           </SelectContent>
@@ -262,7 +276,9 @@ export default function ItemPage() {
                     {i.kode}
                   </Link>
                 </TableCell>
-                <TableCell>{i.nama}</TableCell>
+                <TableCell>
+                  <ItemNameWithType jenis="item">{i.nama}</ItemNameWithType>
+                </TableCell>
                 <TableCell>
                   {i.customerId ? (
                     <Link

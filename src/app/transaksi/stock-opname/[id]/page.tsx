@@ -9,6 +9,7 @@ import { BackLink, PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchableCombobox } from "@/components/ui/combobox";
 import {
   Select,
   SelectContent,
@@ -35,14 +36,15 @@ import {
   tableHeadCellRightClass,
   tableShellClass,
 } from "@/lib/table-styles";
-import { todayISO, uid, formatJenisBarang } from "@/lib/utils";
+import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
+import { todayISO, uid } from "@/lib/utils";
 
 type DraftLine = StockOpnameLine & { qtyAktualInput: number };
 
 function metodeLabel(metode: OpnameMetode) {
   if (metode === "per_batch") return "Per Batch";
   if (metode === "per_gudang") return "Per Gudang";
-  return "Per Item";
+  return "Per Material";
 }
 
 function metodeHint(metode: OpnameMetode) {
@@ -205,6 +207,7 @@ export default function StockOpnameFormPage() {
   const btbs = useDataStore((s) => s.btbs);
   const bkbs = useDataStore((s) => s.bkbs);
   const transfers = useDataStore((s) => s.transfers);
+  const adjustments = useDataStore((s) => s.adjustments);
   const upsert = useDataStore((s) => s.upsertStockOpname);
   const addLog = useDataStore((s) => s.addLog);
   const user = useAuthStore((s) => s.currentUser);
@@ -226,8 +229,18 @@ export default function StockOpnameFormPage() {
         btbs,
         bkbs,
         transfers,
+        adjustments,
       }),
-    [customers, items, finishGoods, gudangList, btbs, bkbs, transfers],
+    [
+      customers,
+      items,
+      finishGoods,
+      gudangList,
+      btbs,
+      bkbs,
+      transfers,
+      adjustments,
+    ],
   );
   const custMap = useMemo(
     () => Object.fromEntries(customers.map((c) => [c.id, c])),
@@ -284,15 +297,27 @@ export default function StockOpnameFormPage() {
     return fallbackCustomerId;
   }
 
-  /** Dropdown: Material + Finish Good. */
+  /** Pilihan barang: Material + Finish Good. Dicari lewat kode atau nama. */
   const productOptions = useMemo(() => {
-    const fromStock = new Map<string, { value: string; label: string }>();
+    const fromStock = new Map<
+      string,
+      {
+        value: string;
+        label: string;
+        kode: string;
+        nama: string;
+        jenis: "item" | "fg";
+      }
+    >();
     for (const r of stock) {
       const value = productKey(r.jenis, r.refId);
       if (!fromStock.has(value)) {
         fromStock.set(value, {
           value,
-          label: `${r.kode} - ${r.nama} (${r.jenis === "item" ? "Material" : "Finish Good"})`,
+          kode: r.kode,
+          nama: r.nama,
+          jenis: r.jenis,
+          label: `${r.kode} - ${r.nama}`,
         });
       }
     }
@@ -301,7 +326,10 @@ export default function StockOpnameFormPage() {
       if (!fromStock.has(value)) {
         fromStock.set(value, {
           value,
-          label: `${i.kode} - ${i.nama} (Material)`,
+          kode: i.kode,
+          nama: i.nama,
+          jenis: "item",
+          label: `${i.kode} - ${i.nama}`,
         });
       }
     }
@@ -310,7 +338,10 @@ export default function StockOpnameFormPage() {
       if (!fromStock.has(value)) {
         fromStock.set(value, {
           value,
-          label: `${f.kode} - ${f.nama} (Finish Good)`,
+          kode: f.kode,
+          nama: f.nama,
+          jenis: "fg",
+          label: `${f.kode} - ${f.nama}`,
         });
       }
     }
@@ -665,7 +696,7 @@ export default function StockOpnameFormPage() {
                     onChange={() => changeMetode("per_item")}
                     className="size-4 accent-emerald-700"
                   />
-                  Per Item
+                  Per Material
                 </label>
                 <label className="flex cursor-pointer items-center gap-2 text-sm">
                   <input
@@ -714,28 +745,31 @@ export default function StockOpnameFormPage() {
                       </SelectContent>
                     </Select>
                   ) : (
-                    <Select
-                      value={pickerValue}
-                      onValueChange={(v) => setPickerValue(v ?? "")}
+                    <SearchableCombobox
                       items={availableToAdd}
-                    >
-                      <SelectTrigger className="h-8 w-full bg-white">
-                        <SelectValue placeholder="Pilih Material atau Finish Good..." />
-                      </SelectTrigger>
-                      <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,36rem)]">
-                        {availableToAdd.length === 0 ? (
-                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                            Semua barang sudah ditambahkan
-                          </div>
-                        ) : (
-                          availableToAdd.map((p) => (
-                            <SelectItem key={p.value} value={p.value}>
-                              {p.label}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
+                      value={pickerValue}
+                      onValueChange={setPickerValue}
+                      filterItem={(item, query) => {
+                        const q = query.toLowerCase();
+                        return (
+                          item.kode.toLowerCase().includes(q) ||
+                          item.nama.toLowerCase().includes(q)
+                        );
+                      }}
+                      renderItem={(item) => (
+                        <ItemNameWithType jenis={item.jenis}>
+                          {item.label}
+                        </ItemNameWithType>
+                      )}
+                      placeholder={
+                        availableToAdd.length === 0
+                          ? "Semua barang sudah ditambahkan"
+                          : "Cari kode atau nama barang..."
+                      }
+                      emptyText="Tidak ada barang yang cocok"
+                      disabled={availableToAdd.length === 0}
+                      className="bg-white"
+                    />
                   )}
                 </div>
                 <Button
@@ -790,12 +824,13 @@ export default function StockOpnameFormPage() {
                         const label =
                           opt?.label ??
                           (sample ? `${sample.kode} - ${sample.nama}` : key);
+                        const jenis = opt?.jenis ?? sample?.jenis;
                         return (
                           <span
                             key={key}
                             className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs"
                           >
-                            {label}
+                            <ItemNameWithType jenis={jenis}>{label}</ItemNameWithType>
                             <button
                               type="button"
                               className="rounded p-0.5 text-muted-foreground hover:bg-white hover:text-destructive"
@@ -826,7 +861,7 @@ export default function StockOpnameFormPage() {
       <Card className="mb-4 border-border/80 bg-white shadow-none">
         <CardHeader>
           <CardTitle className="text-base">
-            {isView ? "Daftar Item dengan Selisih" : "Worksheet Opname"}
+            {isView ? "Daftar Material dengan Selisih" : "Worksheet Opname"}
           </CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -878,7 +913,7 @@ export default function StockOpnameFormPage() {
                   return (
                     <tr key={idx} className="border-b last:border-0">
                       <td className={tableBodyCellClass}>
-                        {formatJenisBarang(line.jenis)}
+                        <ItemTypeBadge jenis={line.jenis} />
                       </td>
                       <td className={`${tableBodyCellClass} font-medium`}>
                         {line.kode}

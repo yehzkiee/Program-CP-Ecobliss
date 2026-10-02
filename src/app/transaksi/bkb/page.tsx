@@ -48,7 +48,7 @@ export default function BkbListPage() {
               <TableHead>Tgl Keluar</TableHead>
               <TableHead>Jenis</TableHead>
               <TableHead>No. SPK</TableHead>
-              <TableHead>Item / FG</TableHead>
+              <TableHead>Material / FG</TableHead>
               <TableHead className="text-right" />
             </TableRow>
           </TableHeader>
@@ -67,7 +67,7 @@ export default function BkbListPage() {
                 <TableCell>{jenisMap[b.jenisTransaksiId]?.nama ?? "-"}</TableCell>
                 <TableCell>{b.noSpk || "-"}</TableCell>
                 <TableCell>
-                  {b.items.length} item · {b.fgs.length} FG
+                  {b.items.length} material · {b.fgs.length} FG
                 </TableCell>
                 <TableCell className="text-right">
                   <Button

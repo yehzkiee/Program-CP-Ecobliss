@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
+import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
 import { BackLink, PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -366,12 +367,20 @@ export default function BomFormPage() {
                   disabled={!canEdit}
                 >
                   <SelectTrigger disabled={!canEdit}>
-                    <SelectValue placeholder="Pilih Finish Good" />
+                    <SelectValue placeholder="Pilih Finish Good">
+                      {(value: string | null) => {
+                        const fg = finishGoods.find((row) => row.id === value);
+                        if (!fg) return "Pilih Finish Good";
+                        return (
+                          <ItemNameWithType jenis="fg">{fg.nama}</ItemNameWithType>
+                        );
+                      }}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {finishGoods.map((f) => (
                       <SelectItem key={f.id} value={f.id}>
-                        {f.nama}
+                        <ItemNameWithType jenis="fg">{f.nama}</ItemNameWithType>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -403,7 +412,7 @@ export default function BomFormPage() {
                     ])
                   }
                 >
-                  <Plus className="mr-1 size-4" /> Item
+                  <Plus className="mr-1 size-4" /> Material
                 </Button>
               )}
             </CardHeader>
@@ -425,12 +434,20 @@ export default function BomFormPage() {
                       disabled={!canEdit}
                     >
                       <SelectTrigger className="flex-1" disabled={!canEdit}>
-                        <SelectValue placeholder="Pilih item" />
+                        <SelectValue placeholder="Pilih material">
+                          {(value: string | null) => {
+                            const item = items.find((row) => row.id === value);
+                            if (!item) return "Pilih material";
+                            return (
+                              <ItemNameWithType jenis="item">{item.nama}</ItemNameWithType>
+                            );
+                          }}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {items.map((i) => (
                           <SelectItem key={i.id} value={i.id}>
-                            {i.nama}
+                            <ItemNameWithType jenis="item">{i.nama}</ItemNameWithType>
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -507,12 +524,20 @@ export default function BomFormPage() {
                       disabled={!canEdit}
                     >
                       <SelectTrigger className="flex-1" disabled={!canEdit}>
-                        <SelectValue placeholder="Pilih Finish Good" />
+                        <SelectValue placeholder="Pilih Finish Good">
+                          {(value: string | null) => {
+                            const fg = finishGoods.find((row) => row.id === value);
+                            if (!fg) return "Pilih Finish Good";
+                            return (
+                              <ItemNameWithType jenis="fg">{fg.nama}</ItemNameWithType>
+                            );
+                          }}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {finishGoods.map((f) => (
                           <SelectItem key={f.id} value={f.id}>
-                            {f.nama}
+                            <ItemNameWithType jenis="fg">{f.nama}</ItemNameWithType>
                           </SelectItem>
                         ))}
                       </SelectContent>

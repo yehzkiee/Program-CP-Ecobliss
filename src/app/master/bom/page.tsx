@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
+import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,7 +45,7 @@ export default function BomListPage() {
               <TableHead>Finish Good</TableHead>
               <TableHead>Revisi Aktif</TableHead>
               <TableHead>Tgl Revisi</TableHead>
-              <TableHead>Item / FG Lines</TableHead>
+              <TableHead>Material / FG Lines</TableHead>
               <TableHead className="text-right" />
             </TableRow>
           </TableHeader>
@@ -63,12 +64,18 @@ export default function BomListPage() {
                     </Link>
                   </TableCell>
                   <TableCell>
-                    {fg ? `${fg.kode} - ${fg.nama}` : "-"}
+                    {fg ? (
+                      <ItemNameWithType jenis="fg">
+                        {fg.kode} - {fg.nama}
+                      </ItemNameWithType>
+                    ) : (
+                      "-"
+                    )}
                   </TableCell>
                   <TableCell>Rev. {latest?.revisi ?? "-"}</TableCell>
                   <TableCell>{formatDateID(latest?.tanggal ?? "")}</TableCell>
                   <TableCell>
-                    {latest?.items.length ?? 0} item · {latest?.fgs.length ?? 0} FG
+                    {latest?.items.length ?? 0} material · {latest?.fgs.length ?? 0} FG
                   </TableCell>
                   <TableCell className="text-right">
                     <Button asChild variant="ghost" size="sm">

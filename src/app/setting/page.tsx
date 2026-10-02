@@ -458,7 +458,7 @@ export default function SettingPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="item">Item</SelectItem>
+                  <SelectItem value="item">Material</SelectItem>
                   <SelectItem value="fg">FG</SelectItem>
                   <SelectItem value="wip">WIP</SelectItem>
                   <SelectItem value="reject">Reject</SelectItem>

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
 import { PageHeader, StatusBadge } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -242,7 +243,9 @@ export default function FinishGoodPage() {
                     {i.kode}
                   </Link>
                 </TableCell>
-                <TableCell>{i.nama}</TableCell>
+                <TableCell>
+                  <ItemNameWithType jenis="fg">{i.nama}</ItemNameWithType>
+                </TableCell>
                 <TableCell>{resolveCustomerNama(i.customerId)}</TableCell>
                 <TableCell>{i.batchCustomer}</TableCell>
                 <TableCell>

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { cn, formatStatusLabel } from "@/lib/utils";
@@ -7,7 +8,7 @@ export function PageHeader({
   description,
   action,
 }: {
-  title: string;
+  title: ReactNode;
   description?: string;
   action?: React.ReactNode;
 }) {

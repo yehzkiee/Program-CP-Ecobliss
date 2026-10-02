@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   tableBodyCellClass,
   tableHeadCellClass,
@@ -6,7 +7,7 @@ import {
 import { cn } from "@/lib/utils";
 
 export type DocLineViewRow = {
-  name: string;
+  name: ReactNode;
   batch: string;
   /** Already formatted, e.g. "500 LBR" */
   qty: string;
