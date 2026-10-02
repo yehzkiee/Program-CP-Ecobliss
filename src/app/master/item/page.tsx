@@ -89,6 +89,7 @@ export default function ItemPage() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<MaterialItem>(blank());
+  const [batchEdited, setBatchEdited] = useState(false);
 
   const custMap = useMemo(
     () => Object.fromEntries(customers.map((c) => [c.id, c])),
@@ -151,6 +152,7 @@ export default function ItemPage() {
 
   function openCreate() {
     const customerId = fallbackCustomerId;
+    setBatchEdited(false);
     setForm({
       ...blank(),
       id: uid("item"),
@@ -170,7 +172,7 @@ export default function ItemPage() {
     const batchCustomer =
       form.batchCustomer ||
       generateBatchCustomer(form.customerId, customers, items);
-    upsert({ ...form, batchCustomer });
+    upsert({ ...form, batchCustomer, konversi1: 1 });
     toast.success("Material disimpan");
     setOpen(false);
   }
@@ -336,12 +338,15 @@ export default function ItemPage() {
                 value={form.customerId || fallbackCustomerId}
                 onValueChange={(v) => {
                   const customerId = v ?? "";
+                  const keepManual = batchEdited && form.batchCustomer.trim() !== "";
                   setForm({
                     ...form,
                     customerId,
-                    batchCustomer: customerId
-                      ? generateBatchCustomer(customerId, customers, items)
-                      : "",
+                    batchCustomer: keepManual
+                      ? form.batchCustomer
+                      : customerId
+                        ? generateBatchCustomer(customerId, customers, items)
+                        : "",
                   });
                 }}
                 items={customers.map((c) => ({ value: c.id, label: c.nama }))}
@@ -360,9 +365,13 @@ export default function ItemPage() {
             </div>
             <div className="space-y-2">
               <Label>Batch Customer</Label>
-              <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-                {form.batchCustomer || "-"}
-              </p>
+              <Input
+                value={form.batchCustomer}
+                onChange={(e) => {
+                  setBatchEdited(true);
+                  setForm({ ...form, batchCustomer: e.target.value });
+                }}
+              />
             </div>
             <div className="space-y-2 sm:col-span-2">
               <p className="text-sm font-medium text-slate-700">
@@ -388,17 +397,7 @@ export default function ItemPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Konversi UOM 1</Label>
-              <Input
-                type="number"
-                min={0}
-                value={form.konversi1}
-                onChange={(e) =>
-                  setForm({ ...form, konversi1: Number(e.target.value) || 0 })
-                }
-              />
-            </div>
+            <div className="hidden sm:block" aria-hidden />
             <div className="space-y-2">
               <Label>UOM 2</Label>
               <Select

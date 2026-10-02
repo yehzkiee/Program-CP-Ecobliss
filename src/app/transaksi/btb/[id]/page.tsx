@@ -12,6 +12,7 @@ import { DocLineViewTable } from "@/components/shared/doc-line-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -60,6 +61,9 @@ export default function BtbFormPage() {
   const [jenisId, setJenisId] = useState(
     existing?.jenisTransaksiId ?? JENIS_OPTIONS[0]?.value ?? "",
   );
+  const [noPo, setNoPo] = useState(existing?.noPo ?? "");
+  const [noSpk, setNoSpk] = useState(existing?.noSpk ?? "");
+  const [keterangan, setKeterangan] = useState(existing?.keterangan ?? "");
   const [lineItems, setLineItems] = useState<BtbLineItem[]>(
     existing?.items ?? [],
   );
@@ -119,6 +123,9 @@ export default function BtbFormPage() {
     if (!existing) return;
     setTanggal(existing.tanggalTerima);
     setJenisId(existing.jenisTransaksiId);
+    setNoPo(existing.noPo ?? "");
+    setNoSpk(existing.noSpk ?? "");
+    setKeterangan(existing.keterangan ?? "");
     setCustomerId(existing.customerId ?? customers[0]?.id ?? "");
     setLineItems(existing.items ?? []);
     setLineFgs(existing.fgs ?? []);
@@ -183,6 +190,9 @@ export default function BtbFormPage() {
       tanggalTerima: tanggal,
       jenisTransaksiId: jenisId,
       customerId,
+      noPo,
+      noSpk,
+      keterangan,
       createdAt: existing?.createdAt ?? new Date().toISOString(),
       fotoBukti: fotoBukti.map((f) => f.dataUrl),
       items: lineItems.map((l) => ({
@@ -300,6 +310,15 @@ export default function BtbFormPage() {
               )
             }
           />
+          <DetailField label="No PO" value={noPo} />
+          <DetailField label="No SPK" value={noSpk} />
+          <DetailField
+            className="sm:col-span-2 lg:col-span-4"
+            label="Keterangan"
+            value={
+              <span className="whitespace-pre-wrap">{keterangan || "-"}</span>
+            }
+          />
         </div>
       ) : (
         <div className="mb-4 grid gap-3 rounded-xl border border-border/80 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -358,6 +377,22 @@ export default function BtbFormPage() {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>No PO</Label>
+            <Input value={noPo} onChange={(e) => setNoPo(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>No SPK</Label>
+            <Input value={noSpk} onChange={(e) => setNoSpk(e.target.value)} />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
+            <Label>Keterangan</Label>
+            <Textarea
+              value={keterangan}
+              onChange={(e) => setKeterangan(e.target.value)}
+              rows={3}
+            />
           </div>
         </div>
       )}

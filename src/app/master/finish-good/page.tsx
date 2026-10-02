@@ -161,7 +161,7 @@ export default function FinishGoodPage() {
     const batchCustomer =
       form.batchCustomer ||
       generateBatchCustomer(form.customerId, customers, finishGoods);
-    upsert({ ...form, batchCustomer });
+    upsert({ ...form, batchCustomer, konversi1: 1 });
     toast.success("Finish Good disimpan");
     setOpen(false);
   }
@@ -348,17 +348,7 @@ export default function FinishGoodPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Konversi UOM 1</Label>
-              <Input
-                type="number"
-                min={0}
-                value={form.konversi1}
-                onChange={(e) =>
-                  setForm({ ...form, konversi1: Number(e.target.value) || 0 })
-                }
-              />
-            </div>
+            <div className="hidden sm:block" aria-hidden />
             <div className="space-y-2">
               <Label>UOM 2</Label>
               <Select

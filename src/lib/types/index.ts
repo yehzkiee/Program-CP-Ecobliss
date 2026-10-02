@@ -86,11 +86,15 @@ export interface JenisTransaksi {
 export interface BomLineItem {
   itemId: string;
   qty: number;
+  /** Satuan utama (`uom1`) material yang dipilih. */
+  uom?: string;
 }
 
 export interface BomLineFg {
   fgId: string;
   qty: number;
+  /** Satuan utama (`uom1`) finish good yang dipilih. */
+  uom?: string;
 }
 
 export interface BomRevision {
@@ -138,6 +142,10 @@ export interface Btb {
   jenisTransaksiId: string;
   /** Customer pemilik barang (pengganti konsep Supplier). */
   customerId?: string;
+  noPo?: string;
+  noSpk?: string;
+  /** Catatan dokumen, terpisah dari keterangan per baris. */
+  keterangan?: string;
   items: BtbLineItem[];
   fgs: BtbLineFg[];
   /** Foto bukti fisik penerimaan (data URL / path). */
@@ -174,7 +182,10 @@ export interface Bkb {
   no: string;
   tanggalKeluar: string;
   jenisTransaksiId: string;
+  noPo?: string;
   noSpk: string;
+  /** Catatan dokumen, terpisah dari keterangan per baris. */
+  keterangan?: string;
   bomId?: string;
   bomMultiplier?: number;
   items: BkbLineItem[];

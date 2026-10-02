@@ -29,12 +29,14 @@ import {
 } from "@/components/ui/table";
 import {
   buildStockRows,
+  buildTitipanRows,
   isApprovedAdjustment,
   findFinishGood,
   findItem,
   isTransferGeneratedBtbLine,
 } from "@/lib/mock/data";
 import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
+import { SearchableCombobox } from "@/components/ui/combobox";
 import { useDataStore } from "@/lib/store";
 import type { AdjustmentStatus } from "@/lib/types";
 import {
@@ -128,7 +130,7 @@ export default function ReportPage() {
   const [tab, setTab] = useState<string>("stock");
   const [filterCust, setFilterCust] = useState("all");
   const [filterGudang, setFilterGudang] = useState("all");
-  const [q, setQ] = useState("");
+  const [selectedItem, setSelectedItem] = useState("");
   const [filterMaterial, setFilterMaterial] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -157,18 +159,67 @@ export default function ReportPage() {
     ],
   );
 
+  const barangOptions = useMemo(() => {
+    const rows = [
+      ...items
+        .filter((item) => item.status === "aktif")
+        .map((item) => ({
+          value: `item:${item.id}`,
+          label: `${item.kode} - ${item.nama}`,
+          kode: item.kode,
+          nama: item.nama,
+          jenis: "item" as const,
+          refId: item.id,
+        })),
+      ...finishGoods
+        .filter((fg) => fg.status === "aktif")
+        .map((fg) => ({
+          value: `fg:${fg.id}`,
+          label: `${fg.kode} - ${fg.nama}`,
+          kode: fg.kode,
+          nama: fg.nama,
+          jenis: "fg" as const,
+          refId: fg.id,
+        })),
+    ];
+    return rows.sort((a, b) => a.label.localeCompare(b.label, "id"));
+  }, [items, finishGoods]);
+
+  const selectedBarang = useMemo(
+    () => barangOptions.find((option) => option.value === selectedItem) ?? null,
+    [barangOptions, selectedItem],
+  );
+
+  const titipan = useMemo(
+    () =>
+      buildTitipanRows({
+        customers,
+        items,
+        finishGoods,
+        gudangList,
+        btbs,
+        bkbs,
+        transfers,
+      }),
+    [customers, items, finishGoods, gudangList, btbs, bkbs, transfers],
+  );
+
+  function matchStockFilters(row: (typeof stock)[number]) {
+    const matchCust = filterCust === "all" || row.customerId === filterCust;
+    const matchGudang = filterGudang === "all" || row.gudangId === filterGudang;
+    const matchBarang =
+      !selectedBarang ||
+      (row.jenis === selectedBarang.jenis && row.refId === selectedBarang.refId);
+    return matchCust && matchGudang && matchBarang;
+  }
+
   const filteredStock = useMemo(() => {
-    return stock.filter((r) => {
-      const matchCust = filterCust === "all" || r.customerId === filterCust;
-      const matchGudang = filterGudang === "all" || r.gudangId === filterGudang;
-      const matchQ =
-        !q ||
-        r.kode.toLowerCase().includes(q.toLowerCase()) ||
-        r.nama.toLowerCase().includes(q.toLowerCase()) ||
-        r.batchCustomer.toLowerCase().includes(q.toLowerCase());
-      return matchCust && matchGudang && matchQ;
-    });
-  }, [stock, filterCust, filterGudang, q]);
+    return stock.filter((r) => matchStockFilters(r));
+  }, [stock, filterCust, filterGudang, selectedBarang]);
+
+  const filteredTitipan = useMemo(() => {
+    return titipan.filter((r) => matchStockFilters(r));
+  }, [titipan, filterCust, filterGudang, selectedBarang]);
 
   const customerFilterItems = useMemo(
     () => [
@@ -385,16 +436,14 @@ export default function ReportPage() {
     return Array.from(map.entries()).map(([key, qty]) => ({ key, qty }));
   };
 
-  /** Per Gudang: filter stok mentah by kode/nama, lalu jumlahkan qty per gudang. */
+  /** Per Gudang: filter stok mentah by barang terpilih, lalu jumlahkan qty per gudang. */
   const perGudangRows = useMemo(() => {
-    const keyword = q.trim().toLowerCase();
     const matched = stock.filter((row) => {
       if (filterCust !== "all" && row.customerId !== filterCust) return false;
       if (filterGudang !== "all" && row.gudangId !== filterGudang) return false;
-      if (!keyword) return true;
+      if (!selectedBarang) return true;
       return (
-        row.kode.toLowerCase().includes(keyword) ||
-        row.nama.toLowerCase().includes(keyword)
+        row.jenis === selectedBarang.jenis && row.refId === selectedBarang.refId
       );
     });
 
@@ -404,7 +453,7 @@ export default function ReportPage() {
       totals.set(gudang, (totals.get(gudang) ?? 0) + row.qty);
     }
     return Array.from(totals.entries()).map(([key, qty]) => ({ key, qty }));
-  }, [stock, q, filterCust, filterGudang]);
+  }, [stock, selectedBarang, filterCust, filterGudang]);
 
   const activeLabel =
     allReports.find((r) => r.id === tab)?.label ?? "Laporan";
@@ -440,12 +489,28 @@ export default function ReportPage() {
           </h2>
           {tab !== "histori" && tab !== "mutasi" && (
             <div className="flex flex-col gap-2 sm:flex-row">
-              <Input
-                placeholder="Cari kode / nama / batch..."
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                className="max-w-sm bg-white"
-              />
+              <div className="w-full sm:w-80">
+                <SearchableCombobox
+                  items={barangOptions}
+                  value={selectedItem}
+                  onValueChange={setSelectedItem}
+                  filterItem={(item, query) => {
+                    const keyword = query.toLowerCase();
+                    return (
+                      item.kode.toLowerCase().includes(keyword) ||
+                      item.nama.toLowerCase().includes(keyword)
+                    );
+                  }}
+                  renderItem={(item) => (
+                    <ItemNameWithType jenis={item.jenis}>
+                      {item.label}
+                    </ItemNameWithType>
+                  )}
+                  placeholder="Cari kode atau nama barang..."
+                  emptyText="Tidak ada barang yang cocok"
+                  className="bg-white"
+                />
+              </div>
               <Select
                 value={filterCust}
                 onValueChange={(v) => setFilterCust(v ?? "all")}
@@ -599,8 +664,8 @@ export default function ReportPage() {
         )}
         {tab === "titipan" && (
           <StockTable
-            rows={filteredStock}
-            caption="Rekap barang titipan customer (stok per BTB sisa)."
+            rows={filteredTitipan}
+            caption="Rekap sisa barang titipan per gudang, sudah termasuk transfer."
           />
         )}
       </SidebarSubnavLayout>
@@ -807,19 +872,27 @@ function StockTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((r, i) => (
-            <TableRow key={i}>
-              <TableCell>
-                <ItemTypeBadge jenis={r.jenis} />
+          {rows.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={7} className="text-center text-muted-foreground">
+                Tidak ada data
               </TableCell>
-              <TableCell>{r.kode}</TableCell>
-              <TableCell>{r.nama}</TableCell>
-              <TableCell>{r.customerNama}</TableCell>
-              <TableCell>{r.gudangNama}</TableCell>
-              <TableCell>{r.batchCustomer || "-"}</TableCell>
-              <TableCell className="text-right tabular-nums">{r.qty}</TableCell>
             </TableRow>
-          ))}
+          ) : (
+            rows.map((r, i) => (
+              <TableRow key={i}>
+                <TableCell>
+                  <ItemTypeBadge jenis={r.jenis} />
+                </TableCell>
+                <TableCell>{r.kode}</TableCell>
+                <TableCell>{r.nama}</TableCell>
+                <TableCell>{r.customerNama}</TableCell>
+                <TableCell>{r.gudangNama}</TableCell>
+                <TableCell>{r.batchCustomer || "-"}</TableCell>
+                <TableCell className="text-right tabular-nums">{r.qty}</TableCell>
+              </TableRow>
+            ))
+          )}
         </TableBody>
       </Table>
     </div>
@@ -843,12 +916,20 @@ function SimpleGroupTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((r) => (
-            <TableRow key={r.key}>
-              <TableCell className="font-medium">{r.key}</TableCell>
-              <TableCell className="text-right">{r.qty}</TableCell>
+          {rows.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={2} className="text-center text-muted-foreground">
+                Tidak ada data
+              </TableCell>
             </TableRow>
-          ))}
+          ) : (
+            rows.map((r) => (
+              <TableRow key={r.key}>
+                <TableCell className="font-medium">{r.key}</TableCell>
+                <TableCell className="text-right">{r.qty}</TableCell>
+              </TableRow>
+            ))
+          )}
         </TableBody>
       </Table>
     </div>

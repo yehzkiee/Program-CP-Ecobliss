@@ -15,12 +15,27 @@ import {
 import { useDataStore } from "@/lib/store";
 import { formatDateID, sortByDateDesc } from "@/lib/utils";
 
+function joinedNames(names: Array<string | undefined>) {
+  const unique = [...new Set(names.filter((name): name is string => Boolean(name)))];
+  return unique.join(", ");
+}
+
 export default function BkbListPage() {
   const bkbs = useDataStore((s) => s.bkbs);
+  const items = useDataStore((s) => s.items);
+  const finishGoods = useDataStore((s) => s.finishGoods);
   const jenis = useDataStore((s) => s.jenisTransaksiList);
   const jenisMap = useMemo(
     () => Object.fromEntries(jenis.map((j) => [j.id, j])),
     [jenis],
+  );
+  const itemMap = useMemo(
+    () => Object.fromEntries(items.map((item) => [item.id, item])),
+    [items],
+  );
+  const fgMap = useMemo(
+    () => Object.fromEntries(finishGoods.map((fg) => [fg.id, fg])),
+    [finishGoods],
   );
 
   const sorted = useMemo(
@@ -47,7 +62,9 @@ export default function BkbListPage() {
               <TableHead>No. BKB</TableHead>
               <TableHead>Tgl Keluar</TableHead>
               <TableHead>Jenis</TableHead>
-              <TableHead>No. SPK</TableHead>
+              <TableHead>Nama Material / FG</TableHead>
+              <TableHead>No SPK</TableHead>
+              <TableHead>No PO</TableHead>
               <TableHead>Material / FG</TableHead>
               <TableHead className="text-right" />
             </TableRow>
@@ -65,7 +82,16 @@ export default function BkbListPage() {
                 </TableCell>
                 <TableCell>{formatDateID(b.tanggalKeluar)}</TableCell>
                 <TableCell>{jenisMap[b.jenisTransaksiId]?.nama ?? "-"}</TableCell>
+                <TableCell className="max-w-64">
+                  <span className="line-clamp-2">
+                    {joinedNames([
+                      ...b.items.map((line) => itemMap[line.itemId]?.nama),
+                      ...b.fgs.map((line) => fgMap[line.fgId]?.nama),
+                    ]) || "-"}
+                  </span>
+                </TableCell>
                 <TableCell>{b.noSpk || "-"}</TableCell>
+                <TableCell>{b.noPo || "-"}</TableCell>
                 <TableCell>
                   {b.items.length} material · {b.fgs.length} FG
                 </TableCell>

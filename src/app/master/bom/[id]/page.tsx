@@ -141,9 +141,17 @@ export default function BomFormPage() {
   const [fgId, setFgId] = useState(existing?.fgId ?? finishGoods[0]?.id ?? "");
   const [keterangan, setKeterangan] = useState(existing?.keterangan ?? "");
   const [lineItems, setLineItems] = useState<BomLineItem[]>(
-    latest?.items ?? [{ itemId: items[0]?.id ?? "", qty: 1 }],
+    (latest?.items ?? [{ itemId: items[0]?.id ?? "", qty: 1 }]).map((line) => ({
+      ...line,
+      uom: line.uom || items.find((item) => item.id === line.itemId)?.uom1 || "",
+    })),
   );
-  const [lineFgs, setLineFgs] = useState<BomLineFg[]>(latest?.fgs ?? []);
+  const [lineFgs, setLineFgs] = useState<BomLineFg[]>(
+    (latest?.fgs ?? []).map((line) => ({
+      ...line,
+      uom: line.uom || finishGoods.find((fg) => fg.id === line.fgId)?.uom1 || "",
+    })),
+  );
 
   const canEdit = isNew || isEditing;
   const isViewMode = !isNew && !isEditing;
@@ -211,8 +219,18 @@ export default function BomFormPage() {
     }
 
     const after = currentSnapshot();
-    after.lineItems = after.lineItems.filter((l) => l.itemId);
-    after.lineFgs = after.lineFgs.filter((l) => l.fgId);
+    after.lineItems = after.lineItems
+      .filter((l) => l.itemId)
+      .map((l) => ({
+        ...l,
+        uom: itemMap[l.itemId]?.uom1 || l.uom || "",
+      }));
+    after.lineFgs = after.lineFgs
+      .filter((l) => l.fgId)
+      .map((l) => ({
+        ...l,
+        uom: fgMap[l.fgId]?.uom1 || l.uom || "",
+      }));
 
     if (isNew) {
       const revision = {
@@ -405,12 +423,13 @@ export default function BomFormPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() =>
+                  onClick={() => {
+                    const item = items[0];
                     setLineItems([
                       ...lineItems,
-                      { itemId: items[0]?.id ?? "", qty: 1 },
-                    ])
-                  }
+                      { itemId: item?.id ?? "", qty: 1, uom: item?.uom1 ?? "" },
+                    ]);
+                  }}
                 >
                   <Plus className="mr-1 size-4" /> Material
                 </Button>
@@ -427,7 +446,11 @@ export default function BomFormPage() {
                       onValueChange={(v) => {
                         const vv = v ?? "";
                         const next = [...lineItems];
-                        next[idx] = { ...line, itemId: vv };
+                        next[idx] = {
+                          ...line,
+                          itemId: vv,
+                          uom: itemMap[vv]?.uom1 ?? "",
+                        };
                         setLineItems(next);
                       }}
                       items={itemSelectItems}
@@ -452,21 +475,26 @@ export default function BomFormPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Input
-                      type="number"
-                      className="sm:w-28"
-                      value={line.qty}
-                      onChange={(e) => {
-                        const next = [...lineItems];
-                        next[idx] = {
-                          ...line,
-                          qty: Number(e.target.value) || 0,
-                        };
-                        setLineItems(next);
-                      }}
-                      disabled={!canEdit}
-                      readOnly={!canEdit}
-                    />
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        className="w-28"
+                        value={line.qty}
+                        onChange={(e) => {
+                          const next = [...lineItems];
+                          next[idx] = {
+                            ...line,
+                            qty: Number(e.target.value) || 0,
+                          };
+                          setLineItems(next);
+                        }}
+                        disabled={!canEdit}
+                        readOnly={!canEdit}
+                      />
+                      <span className="w-12 shrink-0 text-sm text-gray-500">
+                        {itemMap[line.itemId]?.uom1 || line.uom || ""}
+                      </span>
+                    </div>
                     {canEdit && (
                       <Button
                         variant="ghost"
@@ -493,12 +521,13 @@ export default function BomFormPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() =>
+                  onClick={() => {
+                    const fg = finishGoods[0];
                     setLineFgs([
                       ...lineFgs,
-                      { fgId: finishGoods[0]?.id ?? "", qty: 1 },
-                    ])
-                  }
+                      { fgId: fg?.id ?? "", qty: 1, uom: fg?.uom1 ?? "" },
+                    ]);
+                  }}
                 >
                   <Plus className="mr-1 size-4" /> FG
                 </Button>
@@ -517,7 +546,11 @@ export default function BomFormPage() {
                       onValueChange={(v) => {
                         const vv = v ?? "";
                         const next = [...lineFgs];
-                        next[idx] = { ...line, fgId: vv };
+                        next[idx] = {
+                          ...line,
+                          fgId: vv,
+                          uom: fgMap[vv]?.uom1 ?? "",
+                        };
                         setLineFgs(next);
                       }}
                       items={fgSelectItems}
@@ -542,21 +575,26 @@ export default function BomFormPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Input
-                      type="number"
-                      className="sm:w-28"
-                      value={line.qty}
-                      onChange={(e) => {
-                        const next = [...lineFgs];
-                        next[idx] = {
-                          ...line,
-                          qty: Number(e.target.value) || 0,
-                        };
-                        setLineFgs(next);
-                      }}
-                      disabled={!canEdit}
-                      readOnly={!canEdit}
-                    />
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        className="w-28"
+                        value={line.qty}
+                        onChange={(e) => {
+                          const next = [...lineFgs];
+                          next[idx] = {
+                            ...line,
+                            qty: Number(e.target.value) || 0,
+                          };
+                          setLineFgs(next);
+                        }}
+                        disabled={!canEdit}
+                        readOnly={!canEdit}
+                      />
+                      <span className="w-12 shrink-0 text-sm text-gray-500">
+                        {fgMap[line.fgId]?.uom1 || line.uom || ""}
+                      </span>
+                    </div>
                     {canEdit && (
                       <Button
                         variant="ghost"

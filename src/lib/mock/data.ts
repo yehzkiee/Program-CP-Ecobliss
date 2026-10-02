@@ -1,3 +1,4 @@
+import { resolveJenisTransaksiId } from "@/lib/jenis-transaksi";
 import type {
   ActivityLog,
   Adjustment,
@@ -736,6 +737,186 @@ export function buildStockRows(input?: {
           tanggal: event.doc.tanggal,
         });
       }
+    }
+  }
+
+  return lots
+    .filter((lot) => lot.qty > 0)
+    .map(({ tanggal: _tanggal, ...row }) => row);
+}
+
+const TITIPAN_JENIS_ID = "btb-titipan-customer";
+
+/**
+ * Sisa barang titipan di satu gudang =
+ * BTB titipan masuk − BKB keluar + transfer masuk − transfer keluar.
+ * Baris BTB yang lahir dari transfer tidak dihitung lagi sebagai penerimaan.
+ * Semua penerimaan dijumlah dulu, baru pengeluaran dan transfer, supaya
+ * pindah gudang tetap masuk ke gudang tujuan.
+ */
+export function buildTitipanRows(input?: {
+  customers?: Customer[];
+  gudangList?: Gudang[];
+  items?: MaterialItem[];
+  finishGoods?: FinishGood[];
+  btbs?: Btb[];
+  bkbs?: Bkb[];
+  transfers?: TransferGudang[];
+}): StockRow[] {
+  const custs = input?.customers ?? customers;
+  const gudangs = input?.gudangList ?? gudangList;
+  const mats = input?.items ?? items;
+  const fgs = input?.finishGoods ?? finishGoods;
+  const docs = input?.btbs ?? btbs;
+  const bkbDocs = input?.bkbs ?? bkbs;
+  const transferDocs = input?.transfers ?? transfers;
+
+  const custMap = Object.fromEntries(custs.map((c) => [c.id, c]));
+  const gudangMap = Object.fromEntries(gudangs.map((g) => [g.id, g]));
+  const itemMap = Object.fromEntries(mats.map((i) => [i.id, i]));
+  const fgMap = Object.fromEntries(fgs.map((f) => [f.id, f]));
+
+  const titipanBtbs = docs.filter(
+    (btb) => resolveJenisTransaksiId(btb.jenisTransaksiId) === TITIPAN_JENIS_ID,
+  );
+  const titipanBtbIds = new Set(titipanBtbs.map((btb) => btb.id));
+  const lots: StockLot[] = [];
+  const titipanRefs = new Set<string>();
+
+  function pushMasuk(
+    jenis: "item" | "fg",
+    refId: string,
+    kode: string,
+    nama: string,
+    customerId: string,
+    gudangId: string,
+    batchCustomer: string,
+    qty: number,
+    tanggal: string,
+  ) {
+    if (qty <= 0) return;
+    titipanRefs.add(`${jenis}:${refId}`);
+    addLotQty(lots, {
+      jenis,
+      refId,
+      kode,
+      nama,
+      customerId,
+      customerNama: custMap[customerId]?.nama ?? "-",
+      gudangId,
+      gudangNama: gudangMap[gudangId]?.nama ?? "-",
+      batchCustomer,
+      qty,
+      tanggal,
+    });
+  }
+
+  for (const btb of titipanBtbs) {
+    for (const line of btb.items ?? []) {
+      if (isTransferGeneratedBtbLine(line.keterangan)) continue;
+      const item = itemMap[line.itemId];
+      if (!item) continue;
+      pushMasuk(
+        "item",
+        item.id,
+        item.kode,
+        item.nama,
+        btb.customerId || item.customerId,
+        line.gudangId,
+        line.batchCustomer,
+        line.qty,
+        btb.tanggalTerima,
+      );
+    }
+    for (const line of btb.fgs ?? []) {
+      if (isTransferGeneratedBtbLine(line.keterangan)) continue;
+      const fg = fgMap[line.fgId];
+      if (!fg) continue;
+      pushMasuk(
+        "fg",
+        fg.id,
+        fg.kode,
+        fg.nama,
+        btb.customerId || fg.customerId,
+        line.gudangId,
+        line.batchCustomer,
+        line.qty,
+        btb.tanggalTerima,
+      );
+    }
+  }
+
+  for (const bkb of bkbDocs) {
+    for (const line of bkb.items ?? []) {
+      if (line.btbId && !titipanBtbIds.has(line.btbId)) continue;
+      takeFromLots(
+        lots,
+        (lot) =>
+          lot.jenis === "item" &&
+          lot.refId === line.itemId &&
+          lot.gudangId === line.gudangId &&
+          lot.batchCustomer === line.batchCustomer,
+        line.qty,
+      );
+    }
+    for (const line of bkb.fgs ?? []) {
+      if (line.btbId && !titipanBtbIds.has(line.btbId)) continue;
+      takeFromLots(
+        lots,
+        (lot) =>
+          lot.jenis === "fg" &&
+          lot.refId === line.fgId &&
+          lot.gudangId === line.gudangId &&
+          lot.batchCustomer === line.batchCustomer,
+        line.qty,
+      );
+    }
+  }
+
+  for (const transfer of transferDocs) {
+    for (const line of transfer.lines ?? []) {
+      if (line.qty <= 0 || line.dariGudangId === line.keGudangId) continue;
+      const refKey = `${line.jenis}:${line.refId}`;
+      if (!titipanRefs.has(refKey)) continue;
+
+      const taken = takeFromLots(
+        lots,
+        (lot) =>
+          lot.jenis === line.jenis &&
+          lot.refId === line.refId &&
+          lot.gudangId === line.dariGudangId,
+        line.qty,
+      );
+      let moved = 0;
+      for (const part of taken) {
+        moved += part.qty;
+        addLotQty(lots, {
+          ...part.lot,
+          gudangId: line.keGudangId,
+          gudangNama: gudangMap[line.keGudangId]?.nama ?? "-",
+          qty: part.qty,
+          tanggal: transfer.tanggal,
+        });
+      }
+
+      const shortfall = line.qty - moved;
+      if (shortfall <= 0) continue;
+      const host = lots.find(
+        (lot) => lot.jenis === line.jenis && lot.refId === line.refId,
+      );
+      const master =
+        line.jenis === "item" ? itemMap[line.refId] : fgMap[line.refId];
+      pushMasuk(
+        line.jenis,
+        line.refId,
+        master?.kode ?? line.kode ?? "",
+        master?.nama ?? line.nama ?? "",
+        host?.customerId || master?.customerId || "",
+        line.keGudangId,
+        host?.batchCustomer || "",
+        shortfall,
+        transfer.tanggal,
+      );
     }
   }
 

@@ -10,6 +10,7 @@ import { DetailField, DocLink } from "@/components/shared/detail-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -82,6 +83,8 @@ export default function BkbFormPage() {
     existing?.jenisTransaksiId ?? JENIS_OPTIONS[0]?.value ?? "",
   );
   const [noSpk, setNoSpk] = useState(existing?.noSpk ?? "");
+  const [noPo, setNoPo] = useState(existing?.noPo ?? "");
+  const [keterangan, setKeterangan] = useState(existing?.keterangan ?? "");
   const [gudangAsal, setGudangAsal] = useState(gudangList[0]?.id ?? "");
   const [bomId, setBomId] = useState(existing?.bomId ?? "");
   const [bomMultiplier, setBomMultiplier] = useState(
@@ -315,6 +318,8 @@ export default function BkbFormPage() {
     setTanggal(existing.tanggalKeluar);
     setJenisId(existing.jenisTransaksiId);
     setNoSpk(existing.noSpk);
+    setNoPo(existing.noPo ?? "");
+    setKeterangan(existing.keterangan ?? "");
     setBomId(existing.bomId ?? "");
     setBomMultiplier(existing.bomMultiplier ?? 1);
     setLineItems(existing.items);
@@ -372,7 +377,9 @@ export default function BkbFormPage() {
       no: existing?.no ?? formatDocNo(tanggal, bkbs.length + 1),
       tanggalKeluar: tanggal,
       jenisTransaksiId: jenisId,
+      noPo,
       noSpk,
+      keterangan,
       bomId: bomId || undefined,
       bomMultiplier: bomId ? bomMultiplier : undefined,
       items: lineItems,
@@ -484,6 +491,14 @@ export default function BkbFormPage() {
               value={jenisMap[jenisId]?.nama}
             />
             <DetailField label="No. SPK" value={noSpk} />
+            <DetailField label="No PO" value={noPo} />
+            <DetailField
+              className="sm:col-span-2 lg:col-span-4"
+              label="Keterangan"
+              value={
+                <span className="whitespace-pre-wrap">{keterangan || "-"}</span>
+              }
+            />
           </>
         ) : (
           <>
@@ -548,6 +563,18 @@ export default function BkbFormPage() {
               <Input
                 value={noSpk}
                 onChange={(e) => setNoSpk(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>No PO</Label>
+              <Input value={noPo} onChange={(e) => setNoPo(e.target.value)} />
+            </div>
+            <div className="space-y-2 sm:col-span-2 lg:col-span-4">
+              <Label>Keterangan</Label>
+              <Textarea
+                value={keterangan}
+                onChange={(e) => setKeterangan(e.target.value)}
+                rows={3}
               />
             </div>
           </>
