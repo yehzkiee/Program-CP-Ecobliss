@@ -110,6 +110,8 @@ export interface BomRevision {
 export interface Bom {
   id: string;
   kode: string;
+  /** Customer pemilik BOM (master customer). */
+  customerId?: string;
   fgId: string;
   keterangan: string;
   revisions: BomRevision[];

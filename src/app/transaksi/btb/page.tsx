@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -20,7 +21,23 @@ function joinedNames(names: Array<string | undefined>) {
   return unique.join(", ");
 }
 
+function documentTotalQty(doc: {
+  totalQty?: number;
+  items?: { qty?: number }[];
+  fgs?: { qty?: number }[];
+}) {
+  if (typeof doc.totalQty === "number" && Number.isFinite(doc.totalQty)) {
+    return doc.totalQty;
+  }
+  return [...(doc.items ?? []), ...(doc.fgs ?? [])].reduce(
+    (sum, line) => sum + (Number(line.qty) || 0),
+    0,
+  );
+}
+
 export default function BtbListPage() {
+  const [searchSPK, setSearchSPK] = useState("");
+  const [searchPO, setSearchPO] = useState("");
   const btbs = useDataStore((s) => s.btbs);
   const items = useDataStore((s) => s.items);
   const finishGoods = useDataStore((s) => s.finishGoods);
@@ -42,6 +59,17 @@ export default function BtbListPage() {
     () => sortByDateDesc(btbs, "tanggalTerima", "createdAt"),
     [btbs],
   );
+  const filtered = useMemo(() => {
+    const spkQuery = searchSPK.trim().toLowerCase();
+    const poQuery = searchPO.trim().toLowerCase();
+    return sorted.filter((row) => {
+      const matchesSpk =
+        !spkQuery || (row.noSpk ?? "").toLowerCase().includes(spkQuery);
+      const matchesPo =
+        !poQuery || (row.noPo ?? "").toLowerCase().includes(poQuery);
+      return matchesSpk && matchesPo;
+    });
+  }, [sorted, searchSPK, searchPO]);
 
   return (
     <div>
@@ -49,9 +77,25 @@ export default function BtbListPage() {
         title="Bukti Terima Barang (BTB)"
         description="Daftar penerimaan barang dari customer ke gudang. Buka dokumen untuk melihat detail material dan finish good."
         action={
-          <Button asChild className="bg-emerald-700 hover:bg-emerald-800">
-            <Link href="/transaksi/btb/baru">Buat BTB</Link>
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <Input
+              type="text"
+              value={searchSPK}
+              onChange={(e) => setSearchSPK(e.target.value)}
+              placeholder="Cari SPK..."
+              className="bg-white sm:w-44"
+            />
+            <Input
+              type="text"
+              value={searchPO}
+              onChange={(e) => setSearchPO(e.target.value)}
+              placeholder="Cari PO..."
+              className="bg-white sm:w-44"
+            />
+            <Button asChild className="bg-emerald-700 hover:bg-emerald-800">
+              <Link href="/transaksi/btb/baru">Buat BTB</Link>
+            </Button>
+          </div>
         }
       />
 
@@ -63,6 +107,7 @@ export default function BtbListPage() {
               <TableHead>Tgl Terima</TableHead>
               <TableHead>Jenis Transaksi</TableHead>
               <TableHead>Nama Material / FG</TableHead>
+              <TableHead className="text-right">Qty</TableHead>
               <TableHead>No SPK</TableHead>
               <TableHead>No PO</TableHead>
               <TableHead>Material / FG</TableHead>
@@ -70,7 +115,14 @@ export default function BtbListPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sorted.map((b) => (
+            {filtered.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={9} className="text-muted-foreground">
+                  Tidak ada BTB yang cocok dengan pencarian.
+                </TableCell>
+              </TableRow>
+            ) : (
+              filtered.map((b) => (
               <TableRow key={b.id}>
                 <TableCell>
                   <Link
@@ -89,6 +141,9 @@ export default function BtbListPage() {
                       ...b.fgs.map((line) => fgMap[line.fgId]?.nama),
                     ]) || "-"}
                   </span>
+                </TableCell>
+                <TableCell className="text-right whitespace-nowrap tabular-nums">
+                  {documentTotalQty(b).toLocaleString("id-ID")}
                 </TableCell>
                 <TableCell>{b.noSpk || "-"}</TableCell>
                 <TableCell>{b.noPo || "-"}</TableCell>
@@ -114,7 +169,8 @@ export default function BtbListPage() {
                   </Button>
                 </TableCell>
               </TableRow>
-            ))}
+              ))
+            )}
           </TableBody>
         </Table>
       </div>

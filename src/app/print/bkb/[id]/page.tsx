@@ -80,7 +80,7 @@ export default function PrintBkbPage() {
   });
 
   return (
-    <PrintShell>
+    <PrintShell paper="a5">
       <div className="no-print mb-4">
         <Button onClick={() => window.print()} className="bg-emerald-700">
           Cetak

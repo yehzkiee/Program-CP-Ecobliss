@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect } from "react";
 import { cn, formatQty } from "@/lib/utils";
 
 export { formatQty };
@@ -6,16 +9,25 @@ export function PrintShell({
   children,
   className,
   wide,
+  paper = "a4",
 }: {
   children: React.ReactNode;
   className?: string;
   wide?: boolean;
+  paper?: "a4" | "a5";
 }) {
+  useEffect(() => {
+    if (paper !== "a5") return;
+    document.documentElement.classList.add("print-page-a5");
+    return () => document.documentElement.classList.remove("print-page-a5");
+  }, [paper]);
+
   return (
     <div
       className={cn(
         "print-document mx-auto bg-white p-8 text-sm text-slate-900",
         wide ? "max-w-4xl" : "max-w-3xl",
+        paper === "a5" && "max-w-[148mm] px-4 py-5 text-[13px]",
         className,
       )}
     >

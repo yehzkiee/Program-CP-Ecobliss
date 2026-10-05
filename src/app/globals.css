@@ -150,6 +150,56 @@
     break-after: avoid;
     page-break-after: avoid;
   }
+
+  @page print-page-a5 {
+    size: 148mm 210mm;
+    margin: 8mm;
+  }
+
+  html.print-page-a5 {
+    page: print-page-a5;
+  }
+
+  html.print-page-a5 .print-document {
+    font-size: 10px;
+    line-height: 1.35;
+  }
+
+  html.print-page-a5 .print-doc-header {
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+  }
+
+  html.print-page-a5 .print-doc-header h1 {
+    margin-top: 2px;
+    font-size: 14px;
+  }
+
+  html.print-page-a5 .print-section {
+    margin-bottom: 10px;
+  }
+
+  html.print-page-a5 .print-section h2 {
+    margin-bottom: 4px;
+    font-size: 11px;
+  }
+
+  html.print-page-a5 .print-th,
+  html.print-page-a5 .print-td {
+    padding-top: 2px;
+    padding-bottom: 2px;
+    padding-right: 4px;
+    font-size: 9px;
+  }
+
+  html.print-page-a5 .print-signatures {
+    margin-top: 12px;
+    gap: 8px;
+  }
+
+  html.print-page-a5 .print-signature-block > p:first-child {
+    margin-bottom: 28px;
+  }
 }
 
 .print-only {

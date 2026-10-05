@@ -60,8 +60,10 @@ type HistoriRow = {
   /** Dampak ke saldo: BTB positif, BKB negatif, transfer 0, adjustment masuk−keluar. */
   delta: number;
   satuan: string;
-  /** Hanya terisi untuk baris Material (item). */
-  materialId?: string;
+  /** `item:<id>` atau `fg:<id>`. */
+  barangKey?: string;
+  noPo?: string;
+  noSpk?: string;
   href?: string;
   /** Hanya terisi untuk baris Adjustment. */
   adjustmentStatus?: AdjustmentStatus;
@@ -103,6 +105,10 @@ function countsTowardStock(row: HistoriRow) {
   return isApprovedAdjustment(row.adjustmentStatus);
 }
 
+function barangKey(jenis: "item" | "fg", id: string) {
+  return `${jenis}:${id}`;
+}
+
 function movementDelta(
   jenis: HistoriRow["jenis"],
   qty: number,
@@ -131,7 +137,9 @@ export default function ReportPage() {
   const [filterCust, setFilterCust] = useState("all");
   const [filterGudang, setFilterGudang] = useState("all");
   const [selectedItem, setSelectedItem] = useState("");
-  const [filterMaterial, setFilterMaterial] = useState("all");
+  const [filterBarang, setFilterBarang] = useState("all");
+  const [searchPO, setSearchPO] = useState("");
+  const [searchSPK, setSearchSPK] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -237,16 +245,34 @@ export default function ReportPage() {
     [gudangList],
   );
 
-  const materialFilterItems = useMemo(
-    () => [
-      { value: "all", label: "Semua Material" },
-      ...items.map((i) => ({
-        value: i.id,
-        label: formatKodeNama(i.kode, i.nama),
+  const historiBarangOptions = useMemo(() => {
+    const rows = [
+      ...items.map((item) => ({
+        value: barangKey("item", item.id),
+        label: formatKodeNama(item.kode, item.nama),
+        kode: item.kode,
+        nama: item.nama,
+        jenis: "item" as const,
       })),
-    ],
-    [items],
-  );
+      ...finishGoods.map((fg) => ({
+        value: barangKey("fg", fg.id),
+        label: formatKodeNama(fg.kode, fg.nama),
+        kode: fg.kode,
+        nama: fg.nama,
+        jenis: "fg" as const,
+      })),
+    ].sort((a, b) => a.label.localeCompare(b.label, "id"));
+    return [
+      {
+        value: "all",
+        label: "Semua Item/Barang",
+        kode: "",
+        nama: "Semua Item/Barang",
+        jenis: "all" as const,
+      },
+      ...rows,
+    ];
+  }, [items, finishGoods]);
 
   const jenisNama = useMemo(() => {
     const map = Object.fromEntries(
@@ -277,7 +303,9 @@ export default function ReportPage() {
           qty: line.qty,
           delta: movementDelta("BTB", line.qty),
           satuan: line.satuan,
-          materialId: line.itemId,
+          barangKey: barangKey("item", line.itemId),
+          noPo: b.noPo,
+          noSpk: b.noSpk,
           href: `/transaksi/btb/${b.id}`,
         });
       });
@@ -294,6 +322,9 @@ export default function ReportPage() {
           qty: line.qty,
           delta: movementDelta("BTB", line.qty),
           satuan: line.satuan,
+          barangKey: barangKey("fg", line.fgId),
+          noPo: b.noPo,
+          noSpk: b.noSpk,
           href: `/transaksi/btb/${b.id}`,
         });
       });
@@ -313,7 +344,9 @@ export default function ReportPage() {
           qty: line.qty,
           delta: movementDelta("BKB", line.qty),
           satuan: line.satuan,
-          materialId: line.itemId,
+          barangKey: barangKey("item", line.itemId),
+          noPo: b.noPo,
+          noSpk: b.noSpk,
           href: `/transaksi/bkb/${b.id}`,
         });
       });
@@ -329,6 +362,9 @@ export default function ReportPage() {
           qty: line.qty,
           delta: movementDelta("BKB", line.qty),
           satuan: line.satuan,
+          barangKey: barangKey("fg", line.fgId),
+          noPo: b.noPo,
+          noSpk: b.noSpk,
           href: `/transaksi/bkb/${b.id}`,
         });
       });
@@ -351,7 +387,7 @@ export default function ReportPage() {
           qty: line.qty,
           delta: movementDelta("Transfer", line.qty),
           satuan,
-          materialId: line.jenis === "item" ? line.refId : undefined,
+          barangKey: barangKey(line.jenis, line.refId),
           href: `/transaksi/transfer/${t.id}`,
         });
       });
@@ -376,7 +412,7 @@ export default function ReportPage() {
             out: line.out,
           }),
           satuan,
-          materialId: line.jenis === "item" ? line.refId : undefined,
+          barangKey: barangKey(line.jenis, line.refId),
           href: `/transaksi/adjustment/${a.id}`,
           adjustmentStatus: a.status,
         });
@@ -387,9 +423,21 @@ export default function ReportPage() {
   }, [btbs, bkbs, transfers, adjustments, items, finishGoods, jenisNama]);
 
   const filteredHistori = useMemo(() => {
+    const poQuery = searchPO.trim().toLowerCase();
+    const spkQuery = searchSPK.trim().toLowerCase();
     return histori.filter((h) => {
       if (!inDateRange(h.tanggal, dateFrom, dateTo)) return false;
-      if (filterMaterial !== "all" && h.materialId !== filterMaterial) {
+      if (
+        filterBarang &&
+        filterBarang !== "all" &&
+        h.barangKey !== filterBarang
+      ) {
+        return false;
+      }
+      if (poQuery && !(h.noPo ?? "").toLowerCase().includes(poQuery)) {
+        return false;
+      }
+      if (spkQuery && !(h.noSpk ?? "").toLowerCase().includes(spkQuery)) {
         return false;
       }
       const menungguApproval =
@@ -399,16 +447,32 @@ export default function ReportPage() {
       if (menungguApproval) return false;
       return true;
     });
-  }, [histori, filterMaterial, dateFrom, dateTo]);
+  }, [histori, filterBarang, searchPO, searchSPK, dateFrom, dateTo]);
 
   const historiSaldo = useMemo(() => {
-    const matchesMaterial = (row: HistoriRow) =>
-      filterMaterial === "all" || row.materialId === filterMaterial;
+    const poQuery = searchPO.trim().toLowerCase();
+    const spkQuery = searchSPK.trim().toLowerCase();
+    const matchesBarang = (row: HistoriRow) => {
+      if (
+        filterBarang &&
+        filterBarang !== "all" &&
+        row.barangKey !== filterBarang
+      ) {
+        return false;
+      }
+      if (poQuery && !(row.noPo ?? "").toLowerCase().includes(poQuery)) {
+        return false;
+      }
+      if (spkQuery && !(row.noSpk ?? "").toLowerCase().includes(spkQuery)) {
+        return false;
+      }
+      return true;
+    };
     const stokAwal = dateFrom
       ? histori
           .filter(
             (row) =>
-              matchesMaterial(row) &&
+              matchesBarang(row) &&
               row.tanggal < dateFrom &&
               countsTowardStock(row),
           )
@@ -418,12 +482,17 @@ export default function ReportPage() {
       .filter(countsTowardStock)
       .reduce((sum, row) => sum + row.delta, 0);
     return { stokAwal, stokAkhir: stokAwal + mutasi };
-  }, [histori, filteredHistori, filterMaterial, dateFrom]);
+  }, [histori, filteredHistori, filterBarang, searchPO, searchSPK, dateFrom]);
 
-  const saldoScoped = filterMaterial !== "all";
-  const saldoSatuan = saldoScoped
-    ? (items.find((item) => item.id === filterMaterial)?.uom1 ?? "")
-    : "";
+  const saldoScoped =
+    filterBarang.startsWith("item:") || filterBarang.startsWith("fg:");
+  const saldoSatuan = filterBarang.startsWith("fg:")
+    ? (finishGoods.find((fg) => barangKey("fg", fg.id) === filterBarang)
+        ?.uom1 ?? "")
+    : filterBarang.startsWith("item:")
+      ? (items.find((item) => barangKey("item", item.id) === filterBarang)
+          ?.uom1 ?? "")
+      : "";
 
   const groupSum = (
     keyFn: (r: (typeof filteredStock)[0]) => string,
@@ -594,37 +663,52 @@ export default function ReportPage() {
           <div className="space-y-4">
             <div className="grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-2 sm:col-span-2 lg:col-span-2">
-                <Label>Pilih Material</Label>
-                <Select
-                  value={filterMaterial}
-                  onValueChange={(v) => setFilterMaterial(v ?? "all")}
-                  items={materialFilterItems}
-                >
-                  <SelectTrigger className="w-full bg-white">
-                    <SelectValue placeholder="Pilih Material">
-                      {(value: string | null) => {
-                        if (!value || value === "all") return "Semua Material";
-                        const item = items.find((row) => row.id === value);
-                        if (!item) return null;
-                        return (
-                          <ItemNameWithType jenis="item">
-                            {item.kode} - {item.nama}
-                          </ItemNameWithType>
-                        );
-                      }}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,28rem)]">
-                    <SelectItem value="all">Semua Material</SelectItem>
-                    {items.map((i) => (
-                      <SelectItem key={i.id} value={i.id}>
-                        <ItemNameWithType jenis="item">
-                          {i.kode} - {i.nama}
-                        </ItemNameWithType>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Pilih Item/Barang</Label>
+                <SearchableCombobox
+                  items={historiBarangOptions}
+                  value={filterBarang}
+                  onValueChange={setFilterBarang}
+                  filterItem={(item, query) => {
+                    const keyword = query.toLowerCase();
+                    return (
+                      item.label.toLowerCase().includes(keyword) ||
+                      item.kode.toLowerCase().includes(keyword) ||
+                      item.nama.toLowerCase().includes(keyword)
+                    );
+                  }}
+                  renderItem={(item) =>
+                    item.jenis === "all" ? (
+                      item.label
+                    ) : (
+                      <ItemNameWithType jenis={item.jenis}>
+                        {item.label}
+                      </ItemNameWithType>
+                    )
+                  }
+                  placeholder="Semua Item/Barang"
+                  emptyText="Tidak ada barang yang cocok"
+                  className="bg-white"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>No. PO</Label>
+                <Input
+                  type="text"
+                  value={searchPO}
+                  onChange={(e) => setSearchPO(e.target.value)}
+                  placeholder="Cari No. PO..."
+                  className="bg-white"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>No. SPK</Label>
+                <Input
+                  type="text"
+                  value={searchSPK}
+                  onChange={(e) => setSearchSPK(e.target.value)}
+                  placeholder="Cari No. SPK..."
+                  className="bg-white"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Tanggal Dari</Label>
@@ -657,7 +741,7 @@ export default function ReportPage() {
               saldoHint={
                 saldoScoped
                   ? undefined
-                  : "Pilih satu material agar saldo dihitung dalam satu satuan."
+                  : "Pilih satu item/barang agar saldo dihitung dalam satu satuan."
               }
             />
           </div>

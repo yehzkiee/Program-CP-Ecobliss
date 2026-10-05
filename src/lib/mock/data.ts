@@ -177,6 +177,7 @@ export const boms: Bom[] = [
   {
     id: "b1",
     kode: "BOM-001",
+    customerId: "c1",
     fgId: "f1",
     keterangan: "Komposisi Box Premium 20x15",
     revisions: [
@@ -215,6 +216,7 @@ export const boms: Bom[] = [
   {
     id: "b2",
     kode: "BOM-002",
+    customerId: "c2",
     fgId: "f2",
     keterangan: "Komposisi Sleeve Display",
     revisions: [

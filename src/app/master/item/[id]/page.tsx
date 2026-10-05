@@ -332,9 +332,13 @@ export default function ItemDetailPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>Batch Customer</Label>
-                <p className="text-sm text-slate-900">
-                  {draft.batchCustomer || "-"}
-                </p>
+                <Input
+                  type="text"
+                  value={draft.batchCustomer}
+                  onChange={(e) =>
+                    setForm({ ...draft, batchCustomer: e.target.value })
+                  }
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>Status</Label>

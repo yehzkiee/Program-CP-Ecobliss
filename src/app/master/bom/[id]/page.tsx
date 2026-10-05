@@ -33,6 +33,7 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 
 type BomSnapshot = {
   kode: string;
+  customerId: string;
   fgId: string;
   keterangan: string;
   lineItems: BomLineItem[];
@@ -48,12 +49,17 @@ function detectBomChanges(
   after: BomSnapshot,
   itemMap: Record<string, MaterialItem>,
   fgMap: Record<string, FinishGood>,
+  customerName: (id: string) => string,
 ): string[] {
   const changes: string[] = [];
 
   if (before.kode !== after.kode) {
     changes.push(`Before: ${before.kode}`);
     changes.push(`After: ${after.kode}`);
+  }
+  if (before.customerId !== after.customerId) {
+    changes.push(`Before: ${customerName(before.customerId)}`);
+    changes.push(`After: ${customerName(after.customerId)}`);
   }
   if (before.fgId !== after.fgId) {
     const from = fgMap[before.fgId]?.nama ?? before.fgId;
@@ -124,6 +130,7 @@ export default function BomFormPage() {
   const isNew = params.id === "baru";
   const router = useRouter();
   const boms = useDataStore((s) => s.boms);
+  const customers = useDataStore((s) => s.customers);
   const items = useDataStore((s) => s.items);
   const finishGoods = useDataStore((s) => s.finishGoods);
   const upsertBom = useDataStore((s) => s.upsertBom);
@@ -138,6 +145,7 @@ export default function BomFormPage() {
   const [baseline, setBaseline] = useState<BomSnapshot | null>(null);
 
   const [kode, setKode] = useState(existing?.kode ?? "");
+  const [customerId, setCustomerId] = useState(existing?.customerId ?? "");
   const [fgId, setFgId] = useState(existing?.fgId ?? finishGoods[0]?.id ?? "");
   const [keterangan, setKeterangan] = useState(existing?.keterangan ?? "");
   const [lineItems, setLineItems] = useState<BomLineItem[]>(
@@ -176,6 +184,7 @@ export default function BomFormPage() {
 
   const currentSnapshot = (): BomSnapshot => ({
     kode,
+    customerId,
     fgId,
     keterangan,
     lineItems: cloneLines(lineItems),
@@ -184,6 +193,7 @@ export default function BomFormPage() {
 
   function applySnapshot(snap: BomSnapshot) {
     setKode(snap.kode);
+    setCustomerId(snap.customerId);
     setFgId(snap.fgId);
     setKeterangan(snap.keterangan);
     setLineItems(cloneLines(snap.lineItems));
@@ -202,6 +212,7 @@ export default function BomFormPage() {
       const rev = getLatestBomRevision(existing);
       applySnapshot({
         kode: existing.kode,
+        customerId: existing.customerId ?? "",
         fgId: existing.fgId,
         keterangan: existing.keterangan,
         lineItems: rev?.items ?? [],
@@ -213,8 +224,8 @@ export default function BomFormPage() {
   }
 
   function save() {
-    if (!kode || !fgId) {
-      toast.error("Kode BOM dan Finish Good wajib");
+    if (!kode || !customerId || !fgId) {
+      toast.error("Kode BOM, Customer, dan Finish Good wajib");
       return;
     }
 
@@ -245,6 +256,7 @@ export default function BomFormPage() {
       const bom: Bom = {
         id: uid("bom"),
         kode: after.kode,
+        customerId: after.customerId,
         fgId: after.fgId,
         keterangan: after.keterangan,
         revisions: [revision],
@@ -271,13 +283,20 @@ export default function BomFormPage() {
       baseline ??
       ({
         kode: existing.kode,
+        customerId: existing.customerId ?? "",
         fgId: existing.fgId,
         keterangan: existing.keterangan,
         lineItems: cloneLines(latest?.items ?? []),
         lineFgs: cloneLines(latest?.fgs ?? []),
       } satisfies BomSnapshot);
 
-    const changes = detectBomChanges(before, after, itemMap, fgMap);
+    const changes = detectBomChanges(
+      before,
+      after,
+      itemMap,
+      fgMap,
+      (id) => customers.find((c) => c.id === id)?.nama ?? "-",
+    );
     if (changes.length === 0) {
       toast.error("Tidak ada perubahan untuk disimpan");
       return;
@@ -297,6 +316,7 @@ export default function BomFormPage() {
     const bom: Bom = {
       id: existing.id,
       kode: after.kode,
+      customerId: after.customerId,
       fgId: after.fgId,
       keterangan: after.keterangan,
       revisions: [...existing.revisions, revision],
@@ -375,6 +395,26 @@ export default function BomFormPage() {
                   disabled={!canEdit}
                   readOnly={!canEdit}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>Customer</Label>
+                <Select
+                  value={customerId}
+                  onValueChange={(v) => setCustomerId(v ?? "")}
+                  items={customers.map((c) => ({ value: c.id, label: c.nama }))}
+                  disabled={!canEdit}
+                >
+                  <SelectTrigger disabled={!canEdit}>
+                    <SelectValue placeholder="Pilih Customer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customers.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.nama}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label>Finish Good</Label>
