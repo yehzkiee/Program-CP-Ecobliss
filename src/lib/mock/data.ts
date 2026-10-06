@@ -985,15 +985,22 @@ function prefixForAksi(aksi: string): DocNoPrefix | null {
   return null;
 }
 
+function normalizeHistoricalAksi(aksi: string) {
+  if (aksi.trim() === "Simpan BTB") return "Edit BTB";
+  return aksi;
+}
+
 function prefixActivityLog(log: ActivityLog): ActivityLog {
-  const prefix = prefixForAksi(log.aksi);
-  if (!prefix) return log;
-  const detailText = log.detail ?? "";
+  const aksi = normalizeHistoricalAksi(log.aksi ?? "");
+  const next = aksi === log.aksi ? log : { ...log, aksi };
+  const prefix = prefixForAksi(next.aksi);
+  if (!prefix) return next;
+  const detailText = next.detail ?? "";
   const embedded =
     detailText.match(/\b((?:BTB|BKB|SO|ADJ|TG)-\d{6}-\d{5})\b/i)?.[1] ??
     detailText.match(/\b(\d{6}-\d{5})\b/)?.[1];
   const noTransaksi = withDocPrefix(
-    log.noTransaksi?.trim() || embedded || "",
+    next.noTransaksi?.trim() || embedded || "",
     prefix,
   );
   const detail = embedded
@@ -1010,7 +1017,7 @@ function prefixActivityLog(log: ActivityLog): ActivityLog {
         .replace(/\s+/g, " ")
         .trim()
     : detailText;
-  return { ...log, noTransaksi: noTransaksi || undefined, detail };
+  return { ...next, noTransaksi: noTransaksi || undefined, detail };
 }
 
 export function prefixStoredDocNos<
