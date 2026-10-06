@@ -187,7 +187,7 @@ export default function TransferFormPage() {
 
     const payload: TransferGudang = {
       id: existing?.id ?? uid("tf"),
-      no: existing?.no ?? formatDocNo(tanggal, transfers.length + 1),
+      no: existing?.no ?? formatDocNo("TG", tanggal, transfers.length + 1),
       tanggal,
       keterangan,
       lines,
@@ -199,7 +199,8 @@ export default function TransferFormPage() {
       userId: user?.id ?? "local",
       userNama: user?.nama ?? "User",
       aksi: existing ? "Edit Transfer Gudang" : "Transfer Gudang",
-      detail: payload.no,
+      noTransaksi: payload.no,
+      detail: "",
     });
     toast.success("Transfer disimpan — stok antar gudang sudah diperbarui");
     setBaseline(null);
@@ -224,7 +225,7 @@ export default function TransferFormPage() {
       {confirmDialog}
       <BackLink href="/transaksi/transfer" />
       <PageHeader
-        title={isNew ? "Buat Transfer" : `Transfer ${existing?.no ?? ""}`}
+        title={isNew ? "Buat Transfer" : (existing?.no ?? "Transfer")}
         description={
           isViewMode
             ? "Detail pemindahan barang antar gudang. Setiap baris menjelaskan barang mana dipindah dari gudang asal ke gudang tujuan."

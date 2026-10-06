@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { ExportExcelButton } from "@/components/shared/export-excel-button";
+import type { ExcelRow } from "@/lib/export-to-excel";
 import { PageHeader } from "@/components/shared/page-header";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -405,7 +407,7 @@ export default function ReportPage() {
           tanggal: a.tanggal,
           jenis: "Adjustment",
           no: a.no,
-          keterangan: `${formatStatusLabel(a.status)} · ${formatKodeNama(line.kode, line.nama)}${a.stockOpnameNo ? ` · SO ${a.stockOpnameNo}` : ""}`,
+          keterangan: `${formatStatusLabel(a.status)} · ${formatKodeNama(line.kode, line.nama)}${a.stockOpnameNo ? ` · ${a.stockOpnameNo}` : ""}`,
           qty,
           delta: movementDelta("Adjustment", qty, {
             in: line.in,
@@ -527,6 +529,98 @@ export default function ReportPage() {
   const activeLabel =
     allReports.find((r) => r.id === tab)?.label ?? "Laporan";
 
+  const reportExport: {
+    page: string;
+    headers: Record<string, string>;
+    rows: ExcelRow[];
+  } = (() => {
+    if (tab === "stock" || tab === "titipan") {
+      const source = tab === "stock" ? filteredStock : filteredTitipan;
+      return {
+        page: tab === "stock" ? "Report_Stock" : "Report_Barang_Titipan",
+        headers: {
+          jenis: "Jenis",
+          kode: "Kode",
+          nama: "Nama",
+          customer: "Customer",
+          gudang: "Gudang",
+          batch: "Batch",
+          qty: "Qty",
+        } as Record<string, string>,
+        rows: source.map((r) => ({
+          jenis: r.jenis === "fg" ? "Finish Good" : "Material",
+          kode: r.kode,
+          nama: r.nama,
+          customer: r.customerNama,
+          gudang: r.gudangNama,
+          batch: r.batchCustomer || "-",
+          qty: r.qty,
+        })),
+      };
+    }
+    if (tab === "mutasi" || tab === "histori") {
+      const source = tab === "histori" ? filteredHistori : histori;
+      return {
+        page: tab === "histori" ? "Report_Histori_Transaksi" : "Report_Mutasi_Stock",
+        headers: {
+          tanggal: "Tanggal",
+          jenis: "Jenis",
+          no: "No Dokumen",
+          jenisTransaksi: "Jenis Transaksi",
+          keterangan: "Keterangan",
+          qty: "Qty",
+        } as Record<string, string>,
+        rows: source.map((h) => ({
+          tanggal: formatDateID(h.tanggal),
+          jenis: h.jenis,
+          no: h.no,
+          jenisTransaksi: h.jenisTransaksi || "-",
+          keterangan: h.keterangan,
+          qty: formatQty(h.qty, h.satuan),
+        })),
+      };
+    }
+    const grouped =
+      tab === "per-customer"
+        ? groupSum((r) => r.customerNama)
+        : tab === "per-item"
+          ? groupSum((r) =>
+              r.jenis === "item" ? formatKodeNama(r.kode, r.nama) : "",
+            ).filter((r) => r.key)
+          : tab === "per-fg"
+            ? groupSum((r) =>
+                r.jenis === "fg" ? formatKodeNama(r.kode, r.nama) : "",
+              ).filter((r) => r.key)
+            : tab === "per-batch"
+              ? groupSum((r) => r.batchCustomer || "-")
+              : perGudangRows;
+    const title =
+      tab === "per-customer"
+        ? "Customer"
+        : tab === "per-item"
+          ? "Material"
+          : tab === "per-fg"
+            ? "Finish Good"
+            : tab === "per-batch"
+              ? "Batch Customer"
+              : "Gudang";
+    const page =
+      tab === "per-customer"
+        ? "Report_Per_Customer"
+        : tab === "per-item"
+          ? "Report_Per_Material"
+          : tab === "per-fg"
+            ? "Report_Per_FG"
+            : tab === "per-batch"
+              ? "Report_Per_Batch"
+              : "Report_Per_Gudang";
+    return {
+      page,
+      headers: { key: title, qty: "Total Qty" } as Record<string, string>,
+      rows: grouped.map((r) => ({ key: r.key, qty: r.qty })),
+    };
+  })();
+
   return (
     <div>
       <PageHeader
@@ -556,8 +650,9 @@ export default function ReportPage() {
           <h2 className="text-base font-semibold text-slate-900">
             {activeLabel}
           </h2>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           {tab !== "histori" && tab !== "mutasi" && (
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <>
               <div className="w-full sm:w-80">
                 <SearchableCombobox
                   items={barangOptions}
@@ -614,8 +709,14 @@ export default function ReportPage() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </>
           )}
+            <ExportExcelButton
+              page={reportExport.page}
+              rows={reportExport.rows}
+              headers={reportExport.headers}
+            />
+          </div>
         </div>
 
         {tab === "stock" && <StockTable rows={filteredStock} />}

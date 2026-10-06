@@ -218,7 +218,7 @@ function AdjustmentFormInner() {
     }
     const payload: Adjustment = {
       id: existing?.id ?? uid("adj"),
-      no: existing?.no ?? formatDocNo(tanggal, adjustments.length + 1),
+      no: existing?.no ?? formatDocNo("ADJ", tanggal, adjustments.length + 1),
       tanggal,
       stockOpnameId: selectedSo?.id ?? "",
       stockOpnameNo: selectedSo?.no ?? "",
@@ -238,9 +238,10 @@ function AdjustmentFormInner() {
       userId: user?.id ?? "local",
       userNama: user?.nama ?? "User",
       aksi: `Adjustment ${nextStatus}`,
-      detail: payload.no,
+      noTransaksi: payload.no,
+      detail: "",
     });
-    toast.success(`Adjustment ${payload.no} disimpan`);
+    toast.success(`${payload.no} disimpan`);
     router.push(`/transaksi/adjustment/${payload.id}`);
   }
 
@@ -263,7 +264,8 @@ function AdjustmentFormInner() {
       userId: user?.id ?? "local",
       userNama: user?.nama ?? "User",
       aksi: ok ? "Approve Adjustment" : "Tolak Adjustment",
-      detail: payload.no,
+      noTransaksi: payload.no,
+      detail: "",
     });
     toast.success(ok ? "Adjustment disetujui" : "Adjustment ditolak");
   }
@@ -284,7 +286,7 @@ function AdjustmentFormInner() {
     <div>
       <BackLink href="/transaksi/adjustment" />
       <PageHeader
-        title={isNew ? "Buat Adjustment" : `Adjustment ${existing?.no ?? ""}`}
+        title={isNew ? "Buat Adjustment" : (existing?.no ?? "Adjustment")}
         description="Bisa merujuk Stock Opname, atau dibuat mandiri tanpa referensi SO. Persetujuan hanya oleh Super Admin."
         action={!isNew ? <StatusBadge status={status} /> : null}
       />

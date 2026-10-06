@@ -374,7 +374,7 @@ export default function BkbFormPage() {
 
     const payload: Bkb = {
       id: existing?.id ?? uid("bkb"),
-      no: existing?.no ?? formatDocNo(tanggal, bkbs.length + 1),
+      no: existing?.no ?? formatDocNo("BKB", tanggal, bkbs.length + 1),
       tanggalKeluar: tanggal,
       jenisTransaksiId: jenisId,
       noPo,
@@ -392,10 +392,11 @@ export default function BkbFormPage() {
       waktu: new Date().toISOString(),
       userId: user?.id ?? "local",
       userNama: user?.nama ?? "User",
-      aksi: "Buat BKB",
-      detail: payload.no,
+      aksi: isNew ? "Buat BKB" : "Edit BKB",
+      noTransaksi: payload.no,
+      detail: "",
     });
-    toast.success(`BKB ${payload.no} disimpan`);
+    toast.success(`${payload.no} disimpan`);
     if (isNew) {
       router.push(`/transaksi/bkb/${payload.id}`);
     } else {
@@ -431,7 +432,7 @@ export default function BkbFormPage() {
       {confirmDialog}
       <BackLink href="/transaksi/bkb" />
       <PageHeader
-        title={isNew ? "Buat BKB" : `BKB ${existing?.no ?? ""}`}
+        title={isNew ? "Buat BKB" : (existing?.no ?? "BKB")}
         description="Catat barang yang keluar dari gudang asal. Setiap baris harus memilih nomor BTB sumber agar sisa stok terhitung benar."
         action={
           !isNew && existing ? (
@@ -508,7 +509,7 @@ export default function BkbFormPage() {
                 disabled
                 value={
                   existing?.no ??
-                  formatDocNo(tanggal, bkbs.length + 1) + " (preview)"
+                  formatDocNo("BKB", tanggal, bkbs.length + 1) + " (preview)"
                 }
               />
             </div>

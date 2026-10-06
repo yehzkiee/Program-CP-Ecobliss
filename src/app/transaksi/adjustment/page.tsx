@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader, StatusBadge } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useDataStore } from "@/lib/store";
-import { formatDateID } from "@/lib/utils";
+import { formatDateID, formatStatusLabel } from "@/lib/utils";
 
 export default function AdjustmentListPage() {
   const adjustments = useDataStore((s) => s.adjustments);
@@ -23,9 +24,26 @@ export default function AdjustmentListPage() {
         title="Adjustment"
         description="Koreksi stok berdasarkan hasil stock opname. Approval hanya oleh Super Admin."
         action={
-          <Button asChild className="bg-emerald-700 hover:bg-emerald-800">
-            <Link href="/transaksi/adjustment/baru">Buat Adjustment</Link>
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <ExportExcelButton
+              page="Adjustment"
+              rows={adjustments.map((a) => ({
+                no: a.no,
+                tanggal: formatDateID(a.tanggal),
+                stockOpname: a.stockOpnameNo || "—",
+                status: formatStatusLabel(a.status),
+              }))}
+              headers={{
+                no: "No",
+                tanggal: "Tanggal",
+                stockOpname: "No. Stock Opname",
+                status: "Status",
+              }}
+            />
+            <Button asChild className="bg-emerald-700 hover:bg-emerald-800">
+              <Link href="/transaksi/adjustment/baru">Buat Adjustment</Link>
+            </Button>
+          </div>
         }
       />
       <div className="overflow-x-auto rounded-xl border bg-white">

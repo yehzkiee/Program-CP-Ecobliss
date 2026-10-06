@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
+import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -120,6 +121,27 @@ export default function BomListPage() {
             ))}
           </SelectContent>
         </Select>
+        <ExportExcelButton
+          page="BOM"
+          rows={filtered.map((b) => {
+            const latest = getLatestBomRevision(b);
+            const fg = fgMap[b.fgId];
+            return {
+              kode: b.kode,
+              finishGood: fg ? `${fg.kode} - ${fg.nama}` : "-",
+              revisi: latest ? `Rev. ${latest.revisi}` : "-",
+              tanggal: formatDateID(latest?.tanggal ?? ""),
+              lines: `${latest?.items.length ?? 0} material · ${latest?.fgs.length ?? 0} FG`,
+            };
+          })}
+          headers={{
+            kode: "Kode BOM",
+            finishGood: "Finish Good",
+            revisi: "Revisi Aktif",
+            tanggal: "Tgl Revisi",
+            lines: "Material / FG Lines",
+          }}
+        />
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-border/80 bg-white">

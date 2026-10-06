@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
+import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,9 +46,36 @@ export default function TransferListPage() {
         title="Transfer Gudang"
         description="Pindahkan material atau finish good dari satu gudang ke gudang lain, misalnya dari Gudang FG (finish good) ke Gudang WIP (barang dalam proses)."
         action={
-          <Button asChild className="bg-emerald-700 hover:bg-emerald-800">
-            <Link href="/transaksi/transfer/baru">Buat Transfer</Link>
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <ExportExcelButton
+              page="Transfer_Gudang"
+              rows={transfers.map((t) => ({
+                no: t.no,
+                tanggal: formatDateID(t.tanggal),
+                ringkasan: t.lines
+                  .slice(0, 2)
+                  .map((l) => {
+                    const dari = gudangMap[l.dariGudangId];
+                    const ke = gudangMap[l.keGudangId];
+                    const dariHint = gudangHint(dari?.tipe);
+                    const keHint = gudangHint(ke?.tipe);
+                    return `${l.nama} dipindah dari ${dari?.nama ?? "-"}${dariHint ? ` (${dariHint})` : ""} ke ${ke?.nama ?? "-"}${keHint ? ` (${keHint})` : ""}`;
+                  })
+                  .join("; ")
+                  .concat(t.lines.length > 2 ? ` (+${t.lines.length - 2} baris)` : ""),
+                keterangan: t.keterangan || "-",
+              }))}
+              headers={{
+                no: "No",
+                tanggal: "Tanggal",
+                ringkasan: "Ringkasan",
+                keterangan: "Keterangan",
+              }}
+            />
+            <Button asChild className="bg-emerald-700 hover:bg-emerald-800">
+              <Link href="/transaksi/transfer/baru">Buat Transfer</Link>
+            </Button>
+          </div>
         }
       />
       <div className="overflow-x-auto rounded-xl border bg-white">

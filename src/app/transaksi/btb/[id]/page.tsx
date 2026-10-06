@@ -183,7 +183,7 @@ export default function BtbFormPage() {
       return;
     }
 
-    const no = existing?.no ?? formatDocNo(tanggal, btbs.length + 1);
+    const no = existing?.no ?? formatDocNo("BTB", tanggal, btbs.length + 1);
     const payload: Btb = {
       id: existing?.id ?? uid("btb"),
       no,
@@ -210,10 +210,11 @@ export default function BtbFormPage() {
       waktu: new Date().toISOString(),
       userId: user?.id ?? "local",
       userNama: user?.nama ?? "User",
-      aksi: isNew ? "Buat BTB" : "Simpan BTB",
-      detail: payload.no,
+      aksi: isNew ? "Buat BTB" : "Edit BTB",
+      noTransaksi: payload.no,
+      detail: "",
     });
-    toast.success(`BTB ${payload.no} disimpan`);
+    toast.success(`${payload.no} disimpan`);
 
     if (isNew) {
       router.push(`/transaksi/btb/${payload.id}`);
@@ -247,7 +248,7 @@ export default function BtbFormPage() {
       {confirmDialog}
       <BackLink href="/transaksi/btb" />
       <PageHeader
-        title={isNew ? "Buat BTB" : `BTB ${existing?.no ?? ""}`}
+        title={isNew ? "Buat BTB" : (existing?.no ?? "BTB")}
         description="Catat barang yang diterima dari customer ke gudang. Material di bagian atas, finish good di bawah."
         action={
           !isNew && existing ? (
@@ -327,7 +328,7 @@ export default function BtbFormPage() {
             <Input
               value={
                 existing?.no ??
-                formatDocNo(tanggal, btbs.length + 1) + " (preview)"
+                formatDocNo("BTB", tanggal, btbs.length + 1) + " (preview)"
               }
               disabled
             />

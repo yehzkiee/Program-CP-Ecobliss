@@ -88,7 +88,7 @@ export default function DashboardPage() {
                     <p className="font-medium">{a.no}</p>
                     <p className="text-xs text-muted-foreground">
                       {a.stockOpnameNo
-                        ? `Ref SO ${a.stockOpnameNo}`
+                        ? `Ref ${a.stockOpnameNo}`
                         : "Adjustment mandiri"}
                     </p>
                   </div>

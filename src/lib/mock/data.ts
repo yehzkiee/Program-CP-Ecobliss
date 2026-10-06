@@ -239,7 +239,7 @@ export const boms: Bom[] = [
 export const btbs: Btb[] = [
   {
     id: "btb1",
-    no: "260910-00001",
+    no: "BTB-260910-00001",
     tanggalTerima: "2026-09-10",
     jenisTransaksiId: "btb-titipan-customer",
     customerId: "c1",
@@ -296,7 +296,7 @@ export const btbs: Btb[] = [
   },
   {
     id: "btb2",
-    no: "260911-00002",
+    no: "BTB-260911-00002",
     tanggalTerima: "2026-09-11",
     jenisTransaksiId: "btb-titipan-customer",
     customerId: "c2",
@@ -338,7 +338,7 @@ export const btbs: Btb[] = [
 export const bkbs: Bkb[] = [
   {
     id: "bkb1",
-    no: "260912-00001",
+    no: "BKB-260912-00001",
     tanggalKeluar: "2026-09-12",
     jenisTransaksiId: "bkb-keluar-produksi",
     noSpk: "SPK-2026-001",
@@ -349,7 +349,7 @@ export const bkbs: Bkb[] = [
       {
         itemId: "i1",
         btbId: "btb1",
-        btbNo: "260910-00001",
+        btbNo: "BTB-260910-00001",
         btbTanggalTerima: "2026-09-10",
         batchCustomer: "BC-SA-01",
         qty: 20,
@@ -365,7 +365,7 @@ export const bkbs: Bkb[] = [
 export const stockOpnames: StockOpname[] = [
   {
     id: "so1",
-    no: "260913-00001",
+    no: "SO-260913-00001",
     tanggal: "2026-09-13",
     keterangan: "Opname bulanan Gudang Material",
     metode: "per_item",
@@ -389,10 +389,10 @@ export const stockOpnames: StockOpname[] = [
 export const adjustments: Adjustment[] = [
   {
     id: "adj1",
-    no: "260913-00002",
+    no: "ADJ-260913-00002",
     tanggal: "2026-09-13",
     stockOpnameId: "so1",
-    stockOpnameNo: "260913-00001",
+    stockOpnameNo: "SO-260913-00001",
     status: "menunggu_approval",
     keterangan: "Koreksi selisih opname",
     createdAt: "2026-09-13T08:00:00",
@@ -414,7 +414,7 @@ export const adjustments: Adjustment[] = [
 export const transfers: TransferGudang[] = [
   {
     id: "tf1",
-    no: "260912-00003",
+    no: "TG-260912-00003",
     tanggal: "2026-09-12",
     keterangan: "Pindah FG ke WIP",
     createdAt: "2026-09-12T14:00:00",
@@ -433,7 +433,7 @@ export const transfers: TransferGudang[] = [
   },
   {
     id: "tf-karton",
-    no: "260912-00004",
+    no: "TG-260912-00004",
     tanggal: "2026-09-12",
     keterangan: "Pindah Karton dari Gudang Material ke Gudang FG",
     createdAt: "2026-09-12T15:00:00",
@@ -459,7 +459,8 @@ export const activityLogs: ActivityLog[] = [
     userId: "u2",
     userNama: "Bapak Andry",
     aksi: "Buat Adjustment",
-    detail: "No 260913-00002 menunggu approval",
+    noTransaksi: "ADJ-260913-00002",
+    detail: "menunggu approval",
   },
   {
     id: "log2",
@@ -467,7 +468,8 @@ export const activityLogs: ActivityLog[] = [
     userId: "u3",
     userNama: "Petugas Gudang",
     aksi: "Buat BKB",
-    detail: "No 260912-00001",
+    noTransaksi: "BKB-260912-00001",
+    detail: "",
   },
   {
     id: "log3",
@@ -475,7 +477,8 @@ export const activityLogs: ActivityLog[] = [
     userId: "u3",
     userNama: "Petugas Gudang",
     aksi: "Buat BTB",
-    detail: "No 260910-00001",
+    noTransaksi: "BTB-260910-00001",
+    detail: "",
   },
 ];
 
@@ -944,10 +947,117 @@ export function ensureKartonTransfer(list: TransferGudang[]): TransferGudang[] {
   return seed ? [...list, seed] : list;
 }
 
-export function formatDocNo(dateStr: string, seq: number): string {
-  const d = dateStr.replace(/-/g, "").slice(2);
+export type DocNoPrefix = "BTB" | "BKB" | "SO" | "ADJ" | "TG";
+
+const DOC_NO_PREFIX = /^(BTB|BKB|SO|ADJ|TG)-/i;
+const BARE_DOC_NO = /^\d{6}-\d{5}$/;
+
+export function withDocPrefix(
+  no: string | undefined | null,
+  prefix: DocNoPrefix,
+) {
+  const value = (no ?? "").trim();
+  if (!value) return value;
+  if (DOC_NO_PREFIX.test(value)) {
+    return value.replace(DOC_NO_PREFIX, (match) => match.toUpperCase());
+  }
+  if (BARE_DOC_NO.test(value)) return `${prefix}-${value}`;
+  return value;
+}
+
+export function formatDocNo(
+  prefix: DocNoPrefix,
+  dateStr: string,
+  seq: number,
+): string {
+  const d = dateStr.replace(/-/g, "").slice(2, 8);
   const n = seq % 100000;
-  return `${d}-${String(n).padStart(5, "0")}`;
+  return `${prefix}-${d}-${String(n).padStart(5, "0")}`;
+}
+
+function prefixForAksi(aksi: string): DocNoPrefix | null {
+  const label = aksi.toLowerCase();
+  if (label.includes("btb")) return "BTB";
+  if (label.includes("bkb")) return "BKB";
+  if (label.includes("opname")) return "SO";
+  if (label.includes("adjustment")) return "ADJ";
+  if (label.includes("transfer")) return "TG";
+  return null;
+}
+
+function prefixActivityLog(log: ActivityLog): ActivityLog {
+  const prefix = prefixForAksi(log.aksi);
+  if (!prefix) return log;
+  const detailText = log.detail ?? "";
+  const embedded =
+    detailText.match(/\b((?:BTB|BKB|SO|ADJ|TG)-\d{6}-\d{5})\b/i)?.[1] ??
+    detailText.match(/\b(\d{6}-\d{5})\b/)?.[1];
+  const noTransaksi = withDocPrefix(
+    log.noTransaksi?.trim() || embedded || "",
+    prefix,
+  );
+  const detail = embedded
+    ? detailText
+        .replace(
+          new RegExp(
+            `\\bNo\\.?\\s*${embedded.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+            "i",
+          ),
+          "",
+        )
+        .replace(embedded, "")
+        .replace(/[()]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    : detailText;
+  return { ...log, noTransaksi: noTransaksi || undefined, detail };
+}
+
+export function prefixStoredDocNos<
+  T extends {
+    btbs?: Btb[];
+    bkbs?: Bkb[];
+    stockOpnames?: StockOpname[];
+    adjustments?: Adjustment[];
+    transfers?: TransferGudang[];
+    activityLogs?: ActivityLog[];
+  },
+>(state: T): T {
+  return {
+    ...state,
+    btbs: state.btbs?.map((doc) => ({
+      ...doc,
+      no: withDocPrefix(doc.no, "BTB"),
+    })),
+    bkbs: state.bkbs?.map((doc) => ({
+      ...doc,
+      no: withDocPrefix(doc.no, "BKB"),
+      items: (doc.items ?? []).map((line) => ({
+        ...line,
+        btbNo: withDocPrefix(line.btbNo, "BTB"),
+      })),
+      fgs: (doc.fgs ?? []).map((line) => ({
+        ...line,
+        btbNo: withDocPrefix(line.btbNo, "BTB"),
+      })),
+    })),
+    stockOpnames: state.stockOpnames?.map((doc) => ({
+      ...doc,
+      no: withDocPrefix(doc.no, "SO"),
+    })),
+    adjustments: state.adjustments?.map((doc) => ({
+      ...doc,
+      no: withDocPrefix(doc.no, "ADJ"),
+      stockOpnameNo: doc.stockOpnameNo
+        ? withDocPrefix(doc.stockOpnameNo, "SO")
+        : doc.stockOpnameNo,
+    })),
+    transfers: state.transfers?.map((doc) => ({
+      ...doc,
+      no: withDocPrefix(doc.no, "TG"),
+    })),
+    activityLogs: state.activityLogs?.map(prefixActivityLog),
+  };
 }
 
 export type TransferStockLine = {

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
+import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader, StatusBadge } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +33,7 @@ import {
 } from "@/components/ui/table";
 import { useDataStore } from "@/lib/store";
 import type { Customer, MaterialItem, StatusAktif } from "@/lib/types";
-import { uid } from "@/lib/utils";
+import { formatStatusLabel, uid } from "@/lib/utils";
 
 const UOM_OPTIONS = ["LBR", "KG", "M", "PCS", "BOX", "ROLL", "SET"] as const;
 const UOM_NONE = "-";
@@ -251,6 +252,29 @@ export default function ItemPage() {
             <SelectItem value="nonaktif">Nonaktif</SelectItem>
           </SelectContent>
         </Select>
+        <ExportExcelButton
+          page="Material"
+          rows={filtered.map((i) => ({
+            kode: i.kode,
+            nama: i.nama,
+            customer: resolveCustomerNama(i.customerId),
+            uom1: i.uom1 ? `${i.uom1} (${i.konversi1})` : "-",
+            uom2: i.uom2 ? `${i.uom2} (${i.konversi2})` : "-",
+            uom3: i.uom3 ? `${i.uom3} (${i.konversi3})` : "-",
+            batch: i.batchCustomer || "-",
+            status: formatStatusLabel(i.status),
+          }))}
+          headers={{
+            kode: "Kode",
+            nama: "Nama",
+            customer: "Customer",
+            uom1: "UOM 1",
+            uom2: "UOM 2",
+            uom3: "UOM 3",
+            batch: "Batch Customer",
+            status: "Status",
+          }}
+        />
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-border/80 bg-white">

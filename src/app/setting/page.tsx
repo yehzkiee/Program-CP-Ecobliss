@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader, StatusBadge } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,9 +35,30 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useDataStore } from "@/lib/store";
-import type { Gudang, JenisTransaksi, Role, User } from "@/lib/types";
+import type { ActivityLog, Gudang, JenisTransaksi, Role, User } from "@/lib/types";
 import { formatDateTimeID, uid } from "@/lib/utils";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+
+const DOC_NO = /\b((?:BTB|BKB|SO|ADJ|TG)-\d{6}-\d{5}|\d{6}-\d{5})\b/i;
+
+function activityNoTransaksi(log: ActivityLog) {
+  const explicit = log.noTransaksi?.trim();
+  if (explicit) return explicit;
+  return log.detail.match(DOC_NO)?.[1] ?? "";
+}
+
+function activityDetail(log: ActivityLog) {
+  if (log.noTransaksi?.trim()) return log.detail.trim() || "-";
+  const no = activityNoTransaksi(log);
+  if (!no) return log.detail.trim() || "-";
+  const rest = log.detail
+    .replace(new RegExp(`\\bNo\\.?\\s*${no}\\b`, "i"), "")
+    .replace(no, "")
+    .replace(/[()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return rest || "-";
+}
 
 const settingTabs = [
   { id: "users", label: "Users & Role", desc: "Akun dan hak akses" },
@@ -59,6 +81,7 @@ export default function SettingPage() {
   const resetDemo = useDataStore((s) => s.resetDemo);
 
   const [tab, setTab] = useState("users");
+  const [searchNoTransaksi, setSearchNoTransaksi] = useState("");
   const [userOpen, setUserOpen] = useState(false);
   const [userForm, setUserForm] = useState<User>({
     id: "",
@@ -85,6 +108,13 @@ export default function SettingPage() {
   });
 
   const active = settingTabs.find((t) => t.id === tab);
+  const filteredLogs = useMemo(() => {
+    const query = searchNoTransaksi.trim().toLowerCase();
+    if (!query) return logs;
+    return logs.filter((log) =>
+      activityNoTransaksi(log).toLowerCase().includes(query),
+    );
+  }, [logs, searchNoTransaksi]);
 
   return (
     <div>
@@ -126,7 +156,20 @@ export default function SettingPage() {
 
         {tab === "users" && (
           <>
-              <div className="mb-3 flex justify-end">
+              <div className="mb-3 flex justify-end gap-2">
+                <ExportExcelButton
+                  page="Users_Role"
+                  rows={users.map((u) => ({
+                    username: u.username,
+                    nama: u.nama,
+                    role: u.role === "admin" ? "Super Admin" : "User",
+                  }))}
+                  headers={{
+                    username: "Username",
+                    nama: "Nama",
+                    role: "Role",
+                  }}
+                />
                 <Button
                   className="bg-emerald-700 hover:bg-emerald-800"
                   onClick={() => {
@@ -192,7 +235,16 @@ export default function SettingPage() {
 
         {tab === "gudang" && (
           <>
-              <div className="mb-3 flex justify-end">
+              <div className="mb-3 flex justify-end gap-2">
+                <ExportExcelButton
+                  page="Gudang"
+                  rows={gudangList.map((g) => ({
+                    kode: g.kode,
+                    nama: g.nama,
+                    tipe: g.tipe.toUpperCase(),
+                  }))}
+                  headers={{ kode: "Kode", nama: "Nama", tipe: "Tipe" }}
+                />
                 <Button
                   className="bg-emerald-700 hover:bg-emerald-800"
                   onClick={() => {
@@ -258,7 +310,16 @@ export default function SettingPage() {
 
         {tab === "jenis" && (
           <>
-              <div className="mb-3 flex justify-end">
+              <div className="mb-3 flex justify-end gap-2">
+                <ExportExcelButton
+                  page="Jenis_Transaksi"
+                  rows={jenisList.map((j) => ({
+                    kode: j.kode,
+                    nama: j.nama,
+                    untuk: j.untuk.toUpperCase(),
+                  }))}
+                  headers={{ kode: "Kode", nama: "Nama", untuk: "Untuk" }}
+                />
                 <Button
                   className="bg-emerald-700 hover:bg-emerald-800"
                   onClick={() => {
@@ -324,6 +385,32 @@ export default function SettingPage() {
 
         {tab === "log" && (
           <>
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <Input
+                  type="text"
+                  value={searchNoTransaksi}
+                  onChange={(e) => setSearchNoTransaksi(e.target.value)}
+                  placeholder="Cari No Transaksi..."
+                  className="bg-white sm:w-56"
+                />
+                <ExportExcelButton
+                  page="Activity_Log"
+                  rows={filteredLogs.map((l) => ({
+                    waktu: formatDateTimeID(l.waktu),
+                    user: l.userNama,
+                    aksi: l.aksi,
+                    detail: activityDetail(l),
+                    noTransaksi: activityNoTransaksi(l) || "-",
+                  }))}
+                  headers={{
+                    waktu: "Waktu",
+                    user: "User",
+                    aksi: "Aksi",
+                    detail: "Detail",
+                    noTransaksi: "No Transaksi",
+                  }}
+                />
+              </div>
               <div className="overflow-x-auto rounded-xl border bg-white">
                 <Table>
                   <TableHeader>
@@ -332,17 +419,27 @@ export default function SettingPage() {
                       <TableHead>User</TableHead>
                       <TableHead>Aksi</TableHead>
                       <TableHead>Detail</TableHead>
+                      <TableHead>No Transaksi</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {logs.map((l) => (
-                      <TableRow key={l.id}>
-                        <TableCell>{formatDateTimeID(l.waktu)}</TableCell>
-                        <TableCell>{l.userNama}</TableCell>
-                        <TableCell className="font-medium">{l.aksi}</TableCell>
-                        <TableCell>{l.detail}</TableCell>
+                    {filteredLogs.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-muted-foreground">
+                          Tidak ada log yang cocok dengan pencarian.
+                        </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      filteredLogs.map((l) => (
+                        <TableRow key={l.id}>
+                          <TableCell>{formatDateTimeID(l.waktu)}</TableCell>
+                          <TableCell>{l.userNama}</TableCell>
+                          <TableCell className="font-medium">{l.aksi}</TableCell>
+                          <TableCell>{activityDetail(l)}</TableCell>
+                          <TableCell>{activityNoTransaksi(l) || "-"}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </div>

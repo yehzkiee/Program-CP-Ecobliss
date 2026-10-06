@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -112,7 +113,7 @@ export default function CustomerPage() {
         }
       />
 
-      <div className="mb-4">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
         <Select
           value={filterCust}
           onValueChange={(v) => setFilterCust(v ?? "all")}
@@ -130,6 +131,21 @@ export default function CustomerPage() {
             ))}
           </SelectContent>
         </Select>
+        <ExportExcelButton
+          page="Customer"
+          rows={filtered.map((c) => ({
+            nama: c.nama,
+            kode: c.kode,
+            material: counts.get(c.id)?.materials ?? 0,
+            finishGood: counts.get(c.id)?.finishGoods ?? 0,
+          }))}
+          headers={{
+            nama: "Nama Customer",
+            kode: "Kode Customer",
+            material: "Material",
+            finishGood: "Finish Good",
+          }}
+        />
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border/80 bg-white">

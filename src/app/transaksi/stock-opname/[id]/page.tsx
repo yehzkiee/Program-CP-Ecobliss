@@ -557,7 +557,7 @@ export default function StockOpnameFormPage() {
 
     const payload: StockOpname = {
       id: existing?.id ?? uid("so"),
-      no: existing?.no ?? formatDocNo(tanggal, stockOpnames.length + 1),
+      no: existing?.no ?? formatDocNo("SO", tanggal, stockOpnames.length + 1),
       tanggal,
       keterangan,
       metode,
@@ -570,10 +570,11 @@ export default function StockOpnameFormPage() {
       userId: user?.id ?? "local",
       userNama: user?.nama ?? "User",
       aksi: isNew ? "Stock Opname" : "Edit Stock Opname",
-      detail: `${payload.no} (${lines.length} selisih)`,
+      noTransaksi: payload.no,
+      detail: `${lines.length} selisih`,
     });
     toast.success(
-      `SO ${payload.no} disimpan dengan ${lines.length} baris selisih`,
+      `${payload.no} disimpan dengan ${lines.length} baris selisih`,
     );
     setEditing(false);
     router.push(`/transaksi/stock-opname/${payload.id}`);
@@ -601,7 +602,7 @@ export default function StockOpnameFormPage() {
     <div>
       <BackLink href="/transaksi/stock-opname" />
       <PageHeader
-        title={isNew ? "Buat Stock Opname" : `SO ${existing?.no ?? ""}`}
+        title={isNew ? "Buat Stock Opname" : (existing?.no ?? "Stock Opname")}
         description="Tambah beberapa Material dan/atau Finish Good, isi qty aktual. Hanya baris dengan selisih yang masuk transaksi."
         action={
           <div className="flex flex-wrap gap-2">

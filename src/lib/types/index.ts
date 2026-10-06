@@ -281,6 +281,8 @@ export interface ActivityLog {
   userNama: string;
   aksi: string;
   detail: string;
+  /** Nomor dokumen transaksi, terpisah dari teks detail. */
+  noTransaksi?: string;
 }
 
 export interface StockRow {

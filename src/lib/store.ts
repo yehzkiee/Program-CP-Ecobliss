@@ -10,6 +10,7 @@ import {
   btbs as seedBtbs,
   customers as seedCustomers,
   ensureKartonTransfer,
+  prefixStoredDocNos,
   ensureSeedById,
   finishGoods as seedFgs,
   gudangList as seedGudang,
@@ -178,10 +179,10 @@ export const useDataStore = create<DataState>()(
     }),
     {
       name: "program-cp-data",
-      version: 5,
+      version: 6,
       migrate: (persisted) => {
         const state = (persisted ?? {}) as Partial<DataState>;
-        return {
+        return prefixStoredDocNos({
           ...state,
           items: ensureSeedById(
             seedItems,
@@ -203,7 +204,7 @@ export const useDataStore = create<DataState>()(
             ...b,
             jenisTransaksiId: resolveJenisTransaksiId(b.jenisTransaksiId),
           })),
-        };
+        });
       },
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<DataState>;
@@ -234,15 +235,20 @@ export const useDataStore = create<DataState>()(
               seedJenis.some((s) => s.id === j.id),
             ),
           ),
-          btbs: (p.btbs ?? current.btbs).map((b) => ({
-            ...b,
-            jenisTransaksiId: resolveJenisTransaksiId(b.jenisTransaksiId),
-          })),
-          transfers: ensureKartonTransfer(p.transfers ?? current.transfers),
-          bkbs: (p.bkbs ?? current.bkbs).map((b) => ({
-            ...b,
-            jenisTransaksiId: resolveJenisTransaksiId(b.jenisTransaksiId),
-          })),
+          ...prefixStoredDocNos({
+            btbs: (p.btbs ?? current.btbs).map((b) => ({
+              ...b,
+              jenisTransaksiId: resolveJenisTransaksiId(b.jenisTransaksiId),
+            })),
+            bkbs: (p.bkbs ?? current.bkbs).map((b) => ({
+              ...b,
+              jenisTransaksiId: resolveJenisTransaksiId(b.jenisTransaksiId),
+            })),
+            transfers: ensureKartonTransfer(p.transfers ?? current.transfers),
+            stockOpnames: p.stockOpnames ?? current.stockOpnames,
+            adjustments: p.adjustments ?? current.adjustments,
+            activityLogs: p.activityLogs ?? current.activityLogs,
+          }),
         };
       },
     },

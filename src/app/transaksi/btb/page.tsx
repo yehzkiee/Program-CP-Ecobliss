@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,26 +15,27 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useDataStore } from "@/lib/store";
-import { formatDateID, sortByDateDesc } from "@/lib/utils";
+import { formatDateID, formatQty, sortByDateDesc } from "@/lib/utils";
 
-function joinedNames(names: Array<string | undefined>) {
-  const unique = [...new Set(names.filter((name): name is string => Boolean(name)))];
-  return unique.join(", ");
+type QtyLine = { qty?: number; satuan?: string };
+
+function formatLineQty(qty: number | undefined, satuan?: string) {
+  const n = Number(qty);
+  const formatted = Number.isFinite(n) ? n.toLocaleString("id-ID") : "0";
+  return formatQty(formatted, satuan);
 }
 
-function documentTotalQty(doc: {
-  totalQty?: number;
-  items?: { qty?: number }[];
-  fgs?: { qty?: number }[];
-}) {
-  if (typeof doc.totalQty === "number" && Number.isFinite(doc.totalQty)) {
-    return doc.totalQty;
-  }
-  return [...(doc.items ?? []), ...(doc.fgs ?? [])].reduce(
-    (sum, line) => sum + (Number(line.qty) || 0),
-    0,
-  );
+function documentLines<T extends QtyLine>(
+  lines: T[],
+  nameOf: (line: T) => string | undefined,
+) {
+  return lines.map((line) => ({
+    name: nameOf(line)?.trim() || "-",
+    qty: formatLineQty(line.qty, line.satuan),
+  }));
 }
+
+const detailLineClass = "m-0 block h-5 p-0 leading-5 whitespace-nowrap";
 
 export default function BtbListPage() {
   const [searchSPK, setSearchSPK] = useState("");
@@ -70,6 +72,22 @@ export default function BtbListPage() {
       return matchesSpk && matchesPo;
     });
   }, [sorted, searchSPK, searchPO]);
+  const exportRows = filtered.map((b) => {
+    const details = [
+      ...documentLines(b.items, (line) => itemMap[line.itemId]?.nama),
+      ...documentLines(b.fgs, (line) => fgMap[line.fgId]?.nama),
+    ];
+    return {
+      no: b.no,
+      tanggal: formatDateID(b.tanggalTerima),
+      jenis: jenisMap[b.jenisTransaksiId]?.nama ?? "-",
+      nama: details.map((line) => line.name).join("\n") || "-",
+      qty: details.map((line) => line.qty).join("\n") || "-",
+      spk: b.noSpk || "-",
+      po: b.noPo || "-",
+      ringkasan: `${b.items.length} material · ${b.fgs.length} FG`,
+    };
+  });
 
   return (
     <div>
@@ -91,6 +109,20 @@ export default function BtbListPage() {
               onChange={(e) => setSearchPO(e.target.value)}
               placeholder="Cari PO..."
               className="bg-white sm:w-44"
+            />
+            <ExportExcelButton
+              page="BTB"
+              rows={exportRows}
+              headers={{
+                no: "No. BTB",
+                tanggal: "Tgl Terima",
+                jenis: "Jenis Transaksi",
+                nama: "Nama Material / FG",
+                qty: "Qty",
+                spk: "No SPK",
+                po: "No PO",
+                ringkasan: "Material / FG",
+              }}
             />
             <Button asChild className="bg-emerald-700 hover:bg-emerald-800">
               <Link href="/transaksi/btb/baru">Buat BTB</Link>
@@ -122,8 +154,13 @@ export default function BtbListPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((b) => (
-              <TableRow key={b.id}>
+              filtered.map((b) => {
+                const details = [
+                  ...documentLines(b.items, (line) => itemMap[line.itemId]?.nama),
+                  ...documentLines(b.fgs, (line) => fgMap[line.fgId]?.nama),
+                ];
+                return (
+              <TableRow key={b.id} className="[&>td]:align-top">
                 <TableCell>
                   <Link
                     href={`/transaksi/btb/${b.id}`}
@@ -134,16 +171,23 @@ export default function BtbListPage() {
                 </TableCell>
                 <TableCell>{formatDateID(b.tanggalTerima)}</TableCell>
                 <TableCell>{jenisMap[b.jenisTransaksiId]?.nama ?? "-"}</TableCell>
-                <TableCell className="max-w-64">
-                  <span className="line-clamp-2">
-                    {joinedNames([
-                      ...b.items.map((line) => itemMap[line.itemId]?.nama),
-                      ...b.fgs.map((line) => fgMap[line.fgId]?.nama),
-                    ]) || "-"}
-                  </span>
+                <TableCell className="align-top">
+                  {details.length === 0
+                    ? "-"
+                    : details.map((line, index) => (
+                        <div key={index} className={detailLineClass}>
+                          {line.name}
+                        </div>
+                      ))}
                 </TableCell>
-                <TableCell className="text-right whitespace-nowrap tabular-nums">
-                  {documentTotalQty(b).toLocaleString("id-ID")}
+                <TableCell className="align-top text-right tabular-nums">
+                  {details.length === 0
+                    ? "-"
+                    : details.map((line, index) => (
+                        <div key={index} className={detailLineClass}>
+                          {line.qty}
+                        </div>
+                      ))}
                 </TableCell>
                 <TableCell>{b.noSpk || "-"}</TableCell>
                 <TableCell>{b.noPo || "-"}</TableCell>
@@ -169,7 +213,8 @@ export default function BtbListPage() {
                   </Button>
                 </TableCell>
               </TableRow>
-              ))
+                );
+              })
             )}
           </TableBody>
         </Table>
