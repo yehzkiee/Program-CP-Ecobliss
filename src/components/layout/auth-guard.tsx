@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuthStore } from "@/lib/store";
+import { useAuthStore, useDataStore } from "@/lib/store";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const user = useAuthStore((s) => s.currentUser);
@@ -17,6 +17,23 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
     return useAuthStore.persist.onFinishHydration(finish);
   }, []);
+
+  useEffect(() => {
+    if (!hydrated || !user) return;
+    let cancelled = false;
+    void (async () => {
+      const res = await fetch("/api/auth/me");
+      if (cancelled) return;
+      if (!res.ok) {
+        useAuthStore.getState().logout();
+        return;
+      }
+      await useDataStore.persist.rehydrate();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, user?.id]);
 
   useEffect(() => {
     if (!hydrated) return;

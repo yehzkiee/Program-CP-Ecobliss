@@ -43,7 +43,7 @@ import {
 
 interface AuthState {
   currentUser: User | null;
-  login: (username: string, password: string) => boolean;
+  login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   setRoleDemo: (role: Role) => void;
 }
@@ -111,24 +111,74 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       currentUser: null,
-      login: (username, password) => {
-        const user = seedUsers.find(
-          (u) => u.username === username && u.password === password,
-        );
-        if (!user) return false;
-        set({ currentUser: user });
+      login: async (username, password) => {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        if (!res.ok) return false;
+        const body = (await res.json()) as { user: User };
+        set({ currentUser: { ...body.user, password: "" } });
+        await useDataStore.persist.rehydrate();
         return true;
       },
-      logout: () => set({ currentUser: null }),
+      logout: () => {
+        void fetch("/api/auth/logout", { method: "POST" });
+        set({ currentUser: null });
+      },
       setRoleDemo: (role) => {
         const user = get().currentUser;
         if (!user) return;
         set({ currentUser: { ...user, role } });
       },
     }),
-    { name: "program-cp-auth" },
+    {
+      name: "program-cp-auth",
+      partialize: (state) => ({
+        currentUser: state.currentUser
+          ? { ...state.currentUser, password: "" }
+          : null,
+      }),
+    },
   ),
 );
+
+let writeQueue: Promise<void> = Promise.resolve();
+
+const databaseStorage = {
+  getItem: async () => {
+    const res = await fetch("/api/state");
+    if (!res.ok) return null;
+    return (await res.json()) as {
+      state: Partial<DataState>;
+      version: number;
+    };
+  },
+  setItem: (
+    _name: string,
+    value: { state: Partial<DataState>; version?: number },
+  ) => {
+    writeQueue = writeQueue
+      .catch(() => undefined)
+      .then(async () => {
+        const res = await fetch("/api/state", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(value),
+        });
+        if (res.status === 403) {
+          await useDataStore.persist.rehydrate();
+          return;
+        }
+        if (!res.ok) {
+          console.error("Gagal menyimpan data ke database", res.status);
+        }
+      });
+    return writeQueue;
+  },
+  removeItem: async () => undefined,
+};
 
 export const useDataStore = create<DataState>()(
   persist(
@@ -179,6 +229,7 @@ export const useDataStore = create<DataState>()(
     }),
     {
       name: "program-cp-data",
+      storage: databaseStorage,
       version: 6,
       migrate: (persisted) => {
         const state = (persisted ?? {}) as Partial<DataState>;
@@ -231,9 +282,7 @@ export const useDataStore = create<DataState>()(
           ),
           jenisTransaksiList: ensureSeedById(
             seedJenis,
-            (p.jenisTransaksiList ?? current.jenisTransaksiList).filter((j) =>
-              seedJenis.some((s) => s.id === j.id),
-            ),
+            p.jenisTransaksiList ?? current.jenisTransaksiList,
           ),
           ...prefixStoredDocNos({
             btbs: (p.btbs ?? current.btbs).map((b) => ({

@@ -121,7 +121,7 @@ export default function SettingPage() {
       {confirmDialog}
       <PageHeader
         title="Setting & Hak Akses"
-        description="User, role, gudang, jenis transaksi, dan log aktivitas (mock)."
+        description="User, role, gudang, jenis transaksi, dan log aktivitas. Data tersimpan di database Program-CP."
         action={
           <Button
             variant="outline"
@@ -227,8 +227,7 @@ export default function SettingPage() {
                 </Table>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                Role Super Admin khusus untuk approval Adjustment. Demo: toggle role di
-                sidebar.
+                Role Super Admin khusus untuk approval Adjustment. Role mengikuti akun yang login.
               </p>
           </>
         )}
@@ -492,6 +491,7 @@ export default function SettingPage() {
               <Label>Password</Label>
               <Input
                 value={userForm.password}
+                placeholder="Kosongkan jika tidak diubah"
                 onChange={(e) =>
                   setUserForm({ ...userForm, password: e.target.value })
                 }

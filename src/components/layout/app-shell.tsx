@@ -65,7 +65,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const user = useAuthStore((s) => s.currentUser);
   const logout = useAuthStore((s) => s.logout);
-  const setRoleDemo = useAuthStore((s) => s.setRoleDemo);
   const [open, setOpen] = useState(false);
 
   const isPrint = pathname.startsWith("/print");
@@ -131,15 +130,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Badge variant={user.role === "admin" ? "default" : "secondary"}>
               {user.role === "admin" ? "Super Admin" : "User"}
             </Badge>
-            <button
-              type="button"
-              className="text-xs text-emerald-700 underline-offset-2 hover:underline"
-              onClick={() =>
-                setRoleDemo(user.role === "admin" ? "user" : "admin")
-              }
-            >
-              Toggle role
-            </button>
           </div>
         </div>
         <Button

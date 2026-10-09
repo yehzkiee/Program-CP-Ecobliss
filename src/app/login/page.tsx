@@ -14,9 +14,9 @@ export default function LoginPage() {
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("admin123");
 
-  function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const ok = login(username, password);
+    const ok = await login(username, password);
     if (!ok) {
       toast.error("Username atau password salah");
       return;

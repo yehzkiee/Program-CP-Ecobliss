@@ -24,6 +24,11 @@ service = "program-cp-ecoblis"
 [observability]
 enabled = true
 
+[[d1_databases]]
+binding = "DB"
+database_name = "program-cp-ecoblis"
+database_id = "539ed91e-65b7-4966-98e4-25b3d38fc59a"
+
 # Optional later: enable Next.js incremental cache via R2
 # [[r2_buckets]]
 # binding = "NEXT_INC_CACHE_R2_BUCKET"
