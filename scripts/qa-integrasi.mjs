@@ -99,6 +99,42 @@ async function main() {
   const loaded = await api.req("/api/state");
   check("state setelah login", loaded.status === 200 && loaded.json?.state);
   const state = loaded.json.state;
+  const revAwal = loaded.json.revision;
+  check("revisi dataset dilaporkan", typeof revAwal === "number", String(revAwal));
+
+  // Dua orang menyimpan bersamaan: penyimpan dengan revisi lama harus ditolak,
+  // bukan menimpa data yang baru saja disimpan orang lain.
+  const staleDraft = structuredClone(state);
+  staleDraft.customers.unshift({
+    id: `qa-c-stale-${stamp}`,
+    kode: `QA-STALE-${stamp}`,
+    nama: "QA Revisi Lama",
+  });
+  const stalePut = await api.req("/api/state", {
+    method: "PUT",
+    body: JSON.stringify({
+      state: staleDraft,
+      version: 6,
+      revision: revAwal - 1,
+    }),
+  });
+  check(
+    "simpan dengan revisi lama ditolak",
+    stalePut.status === 409,
+    String(stalePut.status),
+  );
+  const afterStale = await api.req("/api/state");
+  check(
+    "data dari revisi lama tidak ikut tersimpan",
+    !afterStale.json.state.customers.some(
+      (row) => row.id === `qa-c-stale-${stamp}`,
+    ),
+  );
+  check(
+    "revisi tidak berubah setelah penolakan",
+    afterStale.json.revision === revAwal,
+    `${afterStale.json.revision} vs ${revAwal}`,
+  );
 
   const customerIds = new Set(state.customers.map((row) => row.id));
   const itemIds = new Set(state.items.map((row) => row.id));
@@ -312,9 +348,14 @@ async function main() {
 
   const saved = await api.req("/api/state", {
     method: "PUT",
-    body: JSON.stringify({ state, version: 6 }),
+    body: JSON.stringify({ state, version: 6, revision: revAwal }),
   });
   check("simpan transaksi QA", saved.status === 200, String(saved.status));
+  check(
+    "revisi naik setelah simpan",
+    saved.json?.revision === revAwal + 1,
+    `${saved.json?.revision} vs ${revAwal + 1}`,
+  );
 
   const again = await api.req("/api/state");
   const savedCustomer = again.json.state.customers.find((row) => row.id === ids.customer);
@@ -401,6 +442,30 @@ async function main() {
     "/report",
     "/setting",
   ]) {
+    const page = await anon.req(path);
+    check(`halaman ${path} merespons`, page.status === 200, String(page.status));
+  }
+
+  // Halaman detail dan halaman cetak: dipakai operator tiap hari, jadi ikut dijaga.
+  const detailPaths = [
+    state.items[0]?.id ? `/master/item/${state.items[0].id}` : null,
+    state.customers[0]?.id ? `/master/customer/${state.customers[0].id}` : null,
+    state.finishGoods[0]?.id
+      ? `/master/finish-good/${state.finishGoods[0].id}`
+      : null,
+    state.boms[0]?.id ? `/master/bom/${state.boms[0].id}` : null,
+    `/transaksi/btb/${ids.btb}`,
+    `/transaksi/bkb/${ids.bkb}`,
+    `/transaksi/transfer/${ids.transfer}`,
+    `/transaksi/stock-opname/${ids.opname}`,
+    `/transaksi/adjustment/${ids.adjOk}`,
+    `/print/btb/${ids.btb}`,
+    `/print/bkb/${ids.bkb}`,
+    state.boms[0]?.id ? `/print/bom/${state.boms[0].id}` : null,
+    "/print/opname/rekap",
+  ].filter(Boolean);
+
+  for (const path of detailPaths) {
     const page = await anon.req(path);
     check(`halaman ${path} merespons`, page.status === 200, String(page.status));
   }

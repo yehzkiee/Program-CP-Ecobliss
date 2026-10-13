@@ -2,6 +2,8 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { toast } from "sonner";
+import { withBasePath } from "@/lib/base-path";
 import {
   activityLogs as seedLogs,
   adjustments as seedAdj,
@@ -112,7 +114,7 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       currentUser: null,
       login: async (username, password) => {
-        const res = await fetch("/api/auth/login", {
+        const res = await fetch(withBasePath("/api/auth/login"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username, password }),
@@ -124,7 +126,7 @@ export const useAuthStore = create<AuthState>()(
         return true;
       },
       logout: () => {
-        void fetch("/api/auth/logout", { method: "POST" });
+        void fetch(withBasePath("/api/auth/logout"), { method: "POST" });
         set({ currentUser: null });
       },
       setRoleDemo: (role) => {
@@ -146,14 +148,21 @@ export const useAuthStore = create<AuthState>()(
 
 let writeQueue: Promise<void> = Promise.resolve();
 
+// Revisi dataset terakhir yang kita lihat dari server. Dipakai supaya dua orang
+// yang menyimpan bersamaan tidak saling menimpa: server menolak dengan 409.
+let serverRevision = 0;
+
 const databaseStorage = {
   getItem: async () => {
-    const res = await fetch("/api/state");
+    const res = await fetch(withBasePath("/api/state"));
     if (!res.ok) return null;
-    return (await res.json()) as {
+    const body = (await res.json()) as {
       state: Partial<DataState>;
       version: number;
+      revision?: number;
     };
+    serverRevision = body.revision ?? 0;
+    return body;
   },
   setItem: (
     _name: string,
@@ -162,17 +171,36 @@ const databaseStorage = {
     writeQueue = writeQueue
       .catch(() => undefined)
       .then(async () => {
-        const res = await fetch("/api/state", {
+        const res = await fetch(withBasePath("/api/state"), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(value),
+          body: JSON.stringify({ ...value, revision: serverRevision }),
         });
+        if (res.status === 409) {
+          toast.warning(
+            "Data sudah diubah pengguna lain. Halaman dimuat ulang supaya tidak ada perubahan yang tertimpa.",
+            { duration: 8000 },
+          );
+          await useDataStore.persist.rehydrate();
+          return;
+        }
         if (res.status === 403) {
+          toast.error(
+            "Hanya admin yang dapat mengubah user atau menyetujui adjustment.",
+          );
           await useDataStore.persist.rehydrate();
           return;
         }
         if (!res.ok) {
+          toast.error("Gagal menyimpan data ke database. Coba lagi.");
           console.error("Gagal menyimpan data ke database", res.status);
+          return;
+        }
+        const body = (await res.json().catch(() => null)) as {
+          revision?: number;
+        } | null;
+        if (typeof body?.revision === "number") {
+          serverRevision = body.revision;
         }
       });
     return writeQueue;

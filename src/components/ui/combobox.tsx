@@ -38,16 +38,16 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
 }: SearchableComboboxProps<T>) {
   const [query, setQuery] = React.useState("")
   const [trackedValue, setTrackedValue] = React.useState(value)
-  const typingRef = React.useRef(false)
-  const filterItemRef = React.useRef(filterItem)
-  filterItemRef.current = filterItem
+  const [typing, setTyping] = React.useState(false)
 
+  // Menyesuaikan state saat value dari parent berubah (pola resmi React
+  // "storing information from previous renders"), tanpa menyentuh ref saat render.
   if (value !== trackedValue) {
     setTrackedValue(value)
-    if (trackedValue && !value && !typingRef.current) {
+    if (trackedValue && !value && !typing) {
       setQuery("")
     }
-    typingRef.current = false
+    setTyping(false)
   }
 
   const selected = React.useMemo(
@@ -62,7 +62,7 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
       (selected != null && q === selected.label.trim().toLowerCase())
     const matched = browsing
       ? items
-      : items.filter((item) => filterItemRef.current(item, query.trim()))
+      : items.filter((item) => filterItem(item, query.trim()))
     let visibleItems = matched.slice(0, RESULT_LIMIT)
     if (
       selected &&
@@ -80,7 +80,7 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
     }
 
     return { visible: visibleItems, hint: hintText }
-  }, [items, query, selected])
+  }, [filterItem, items, query, selected])
 
   return (
     <ComboboxPrimitive.Root
@@ -91,7 +91,7 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
       onInputValueChange={(next, details) => {
         setQuery(next)
         if (details.reason === "input-change") {
-          typingRef.current = true
+          setTyping(true)
           onValueChange("")
         }
       }}

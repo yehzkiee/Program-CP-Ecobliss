@@ -1,7 +1,22 @@
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import {
+  ensureMysql,
+  loadStateMysql,
+  loginUserMysql,
+  logoutTokenMysql,
+  readRevisionMysql,
+  readStockMysql,
+  replacePersistedStateMysql,
+  pakaiMysql,
+  userFromTokenMysql,
+} from "@/server/mysql-store";
+import {
+  resolvePasswordHash,
+  verifyPassword,
+} from "@/server/password";
 import {
   adjustments as seedAdjustments,
   activityLogs as seedLogs,
@@ -84,28 +99,21 @@ function seedData(): PersistedData {
   };
 }
 
-function hashPassword(password: string) {
-  const salt = randomBytes(16).toString("hex");
-  const hash = scryptSync(password, salt, 32).toString("hex");
-  return `scrypt:${salt}:${hash}`;
-}
+export { verifyPassword };
 
-export function verifyPassword(password: string, stored: string) {
-  const [algo, salt, hash] = stored.split(":");
-  if (algo !== "scrypt" || !salt || !hash) return false;
-  const actual = scryptSync(password, salt, 32);
-  const expected = Buffer.from(hash, "hex");
-  if (actual.length !== expected.length) return false;
-  return timingSafeEqual(actual, expected);
+function dataDirectory() {
+  const configured = process.env.PROGRAM_CP_DATA_DIR?.trim();
+  return configured ? path.resolve(configured) : path.join(process.cwd(), "data");
 }
 
 function openDatabase() {
   if (globalForDb.programCpDb) return globalForDb.programCpDb;
-  const dir = path.join(process.cwd(), "data");
+  const dir = dataDirectory();
   mkdirSync(dir, { recursive: true });
   const database = new DatabaseSync(path.join(dir, "program-cp.sqlite"));
   database.exec("PRAGMA journal_mode = WAL;");
   database.exec("PRAGMA foreign_keys = ON;");
+  database.exec("PRAGMA busy_timeout = 5000;");
   database.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -243,6 +251,10 @@ function openDatabase() {
       batch_customer TEXT NOT NULL,
       qty REAL NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
   const count = database.prepare("SELECT COUNT(*) AS n FROM users").get() as {
     n: number;
@@ -250,16 +262,6 @@ function openDatabase() {
   if (count.n === 0) saveState(database, seedData());
   globalForDb.programCpDb = database;
   return database;
-}
-
-function resolveHash(
-  id: string,
-  password: string,
-  previous: Map<string, string>,
-) {
-  if (!password) return previous.get(id) ?? hashPassword(randomBytes(16).toString("hex"));
-  if (password.startsWith("scrypt:")) return password;
-  return hashPassword(password);
 }
 
 function replaceDocs(
@@ -295,7 +297,7 @@ export function saveState(database: DatabaseSync, state: PersistedData) {
         user.username,
         user.nama,
         user.role,
-        resolveHash(user.id, user.password ?? "", previous),
+        resolvePasswordHash(user.id, user.password ?? "", previous),
       ]),
     );
     replaceDocs(
@@ -477,6 +479,7 @@ export function saveState(database: DatabaseSync, state: PersistedData) {
       ]),
     );
     rebuildLedger(database, state);
+    bumpRevision(database);
     database.exec("COMMIT");
   } catch (error) {
     database.exec("ROLLBACK");
@@ -670,6 +673,10 @@ function readJsonRows<T>(database: DatabaseSync, sql: string): T[] {
 }
 
 export async function loadState(): Promise<PersistedData> {
+  if (pakaiMysql()) {
+    await ensureMysql();
+    return loadStateMysql();
+  }
   return loadStateSqlite();
 }
 
@@ -822,6 +829,10 @@ export function publicUser(row: {
 }
 
 export async function loginUser(username: string, password: string) {
+  if (pakaiMysql()) {
+    await ensureMysql();
+    return loginUserMysql(username, password);
+  }
   return loginUserSqlite(username, password);
 }
 
@@ -841,6 +852,10 @@ function loginUserSqlite(username: string, password: string) {
 }
 
 export async function userFromToken(token: string | undefined | null) {
+  if (pakaiMysql()) {
+    await ensureMysql();
+    return userFromTokenMysql(token);
+  }
   return userFromTokenSqlite(token);
 }
 
@@ -862,10 +877,18 @@ function userFromTokenSqlite(token: string | undefined | null) {
 
 export async function logoutToken(token: string | undefined | null) {
   if (!token) return;
+  if (pakaiMysql()) {
+    await ensureMysql();
+    return logoutTokenMysql(token);
+  }
   openDatabase().prepare("DELETE FROM sessions WHERE token = ?").run(token);
 }
 
 export async function readStock() {
+  if (pakaiMysql()) {
+    await ensureMysql();
+    return readStockMysql();
+  }
   return readStockSqlite();
 }
 
@@ -885,6 +908,40 @@ function readStockSqlite() {
   return { balances, ledgerCount: ledger.n };
 }
 
+const REVISION_KEY = "dataset_revision";
+
+export async function readRevision(): Promise<number> {
+  if (pakaiMysql()) {
+    await ensureMysql();
+    return readRevisionMysql();
+  }
+  return readRevisionSqlite();
+}
+
+function readRevisionSqlite(database = openDatabase()): number {
+  const row = database
+    .prepare("SELECT value FROM app_meta WHERE key = ?")
+    .get(REVISION_KEY) as { value: string } | undefined;
+  const value = Number(row?.value ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function bumpRevision(database: DatabaseSync) {
+  const next = readRevisionSqlite(database) + 1;
+  database
+    .prepare(
+      `INSERT INTO app_meta (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    )
+    .run(REVISION_KEY, String(next));
+}
+
 export async function replacePersistedState(state: PersistedData) {
-  saveState(openDatabase(), state);
+  if (pakaiMysql()) {
+    await ensureMysql();
+    return replacePersistedStateMysql(state);
+  }
+  const database = openDatabase();
+  saveState(database, state);
+  return readRevisionSqlite(database);
 }

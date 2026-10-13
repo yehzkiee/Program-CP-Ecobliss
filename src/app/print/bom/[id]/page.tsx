@@ -68,7 +68,7 @@ export default function PrintBomPage() {
       const item = itemMap[l.itemId];
       return [
         item?.kode ?? "-",
-        <ItemNameWithType jenis="item">{item?.nama ?? "-"}</ItemNameWithType>,
+        <ItemNameWithType key="nama" jenis="item">{item?.nama ?? "-"}</ItemNameWithType>,
         String(l.qty),
         item?.uom1 ?? "-",
       ];
@@ -79,7 +79,7 @@ export default function PrintBomPage() {
       const f = fgMap[l.fgId];
       return [
         f?.kode ?? "-",
-        <ItemNameWithType jenis="fg">{f?.nama ?? "-"}</ItemNameWithType>,
+        <ItemNameWithType key="nama" jenis="fg">{f?.nama ?? "-"}</ItemNameWithType>,
         String(l.qty),
       ];
     }) ?? [];

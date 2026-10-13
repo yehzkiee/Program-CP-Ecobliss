@@ -59,7 +59,7 @@ export default function PrintBkbPage() {
     const item = findItem(l.itemId, items);
     return [
       item?.kode ?? "-",
-      <ItemNameWithType jenis="item">{item?.nama ?? "-"}</ItemNameWithType>,
+      <ItemNameWithType key="nama" jenis="item">{item?.nama ?? "-"}</ItemNameWithType>,
       l.btbNo || "-",
       l.btbTanggalTerima ? formatDateShort(l.btbTanggalTerima) : "-",
       formatQty(l.qty, l.satuan),
@@ -71,7 +71,7 @@ export default function PrintBkbPage() {
     const fg = findFinishGood(l.fgId, fgs);
     return [
       fg?.kode ?? "-",
-      <ItemNameWithType jenis="fg">{fg?.nama ?? "-"}</ItemNameWithType>,
+      <ItemNameWithType key="nama" jenis="fg">{fg?.nama ?? "-"}</ItemNameWithType>,
       l.btbNo || "-",
       l.btbTanggalTerima ? formatDateShort(l.btbTanggalTerima) : "-",
       formatQty(l.qty, l.satuan),
