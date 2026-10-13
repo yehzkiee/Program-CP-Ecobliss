@@ -11,6 +11,7 @@ import {
   customers as seedCustomers,
   ensureKartonTransfer,
   prefixStoredDocNos,
+  withoutTransferBtbLines,
   ensureSeedById,
   finishGoods as seedFgs,
   gudangList as seedGudang,
@@ -247,10 +248,12 @@ export const useDataStore = create<DataState>()(
           gudangList: ensureSeedById(seedGudang, state.gudangList ?? []),
           // Ganti penuh agar opsi lama tidak ikut muncul di Setting/list.
           jenisTransaksiList: seedJenis,
-          btbs: (state.btbs ?? []).map((b) => ({
-            ...b,
-            jenisTransaksiId: resolveJenisTransaksiId(b.jenisTransaksiId),
-          })),
+          btbs: (state.btbs ?? []).map((b) =>
+            withoutTransferBtbLines({
+              ...b,
+              jenisTransaksiId: resolveJenisTransaksiId(b.jenisTransaksiId),
+            }),
+          ),
           bkbs: (state.bkbs ?? []).map((b) => ({
             ...b,
             jenisTransaksiId: resolveJenisTransaksiId(b.jenisTransaksiId),
@@ -285,10 +288,12 @@ export const useDataStore = create<DataState>()(
             p.jenisTransaksiList ?? current.jenisTransaksiList,
           ),
           ...prefixStoredDocNos({
-            btbs: (p.btbs ?? current.btbs).map((b) => ({
-              ...b,
-              jenisTransaksiId: resolveJenisTransaksiId(b.jenisTransaksiId),
-            })),
+            btbs: (p.btbs ?? current.btbs).map((b) =>
+              withoutTransferBtbLines({
+                ...b,
+                jenisTransaksiId: resolveJenisTransaksiId(b.jenisTransaksiId),
+              }),
+            ),
             bkbs: (p.bkbs ?? current.bkbs).map((b) => ({
               ...b,
               jenisTransaksiId: resolveJenisTransaksiId(b.jenisTransaksiId),

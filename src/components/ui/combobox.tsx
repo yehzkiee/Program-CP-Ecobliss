@@ -22,6 +22,13 @@ type SearchableComboboxProps<T extends SearchableComboboxItem> = {
   emptyText?: string
   disabled?: boolean
   className?: string
+  /**
+   * When false, typing only filters the list. The current value stays
+   * until the user picks another item.
+   */
+  clearValueOnInput?: boolean
+  /** Noun used when the list is longer than the visible limit. */
+  itemNoun?: string
   renderItem?: (item: T) => React.ReactNode
 }
 
@@ -34,13 +41,27 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
   emptyText = "Tidak ada hasil",
   disabled = false,
   className,
+  clearValueOnInput = true,
+  itemNoun = "barang",
   renderItem,
 }: SearchableComboboxProps<T>) {
+  const inputRef = React.useRef<HTMLInputElement>(null)
   const [query, setQuery] = React.useState("")
+  const [editing, setEditing] = React.useState(false)
   const [trackedValue, setTrackedValue] = React.useState(value)
   const typingRef = React.useRef(false)
   const filterItemRef = React.useRef(filterItem)
   filterItemRef.current = filterItem
+
+  const selected = React.useMemo(
+    () => items.find((item) => item.value === value) ?? null,
+    [items, value],
+  )
+
+  const idleLabel = selected?.label ?? ""
+  if (!editing && query !== idleLabel) {
+    setQuery(idleLabel)
+  }
 
   if (value !== trackedValue) {
     setTrackedValue(value)
@@ -49,11 +70,6 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
     }
     typingRef.current = false
   }
-
-  const selected = React.useMemo(
-    () => items.find((item) => item.value === value) ?? null,
-    [items, value],
-  )
 
   const { visible, hint } = React.useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -74,13 +90,13 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
 
     let hintText: string | null = null
     if (browsing && items.length > visibleItems.length) {
-      hintText = `Menampilkan ${visibleItems.length} dari ${items.length} barang. Ketik kode atau nama untuk mencari.`
+      hintText = `Menampilkan ${visibleItems.length} dari ${items.length} ${itemNoun}. Ketik kode atau nama untuk mencari.`
     } else if (!browsing && matched.length > visibleItems.length) {
       hintText = `Menampilkan ${visibleItems.length} dari ${matched.length} hasil. Perjelas pencarian.`
     }
 
     return { visible: visibleItems, hint: hintText }
-  }, [items, query, selected])
+  }, [items, itemNoun, query, selected])
 
   return (
     <ComboboxPrimitive.Root
@@ -88,12 +104,24 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
       value={selected}
       inputValue={query}
       onValueChange={(next) => onValueChange(next?.value ?? "")}
-      onInputValueChange={(next, details) => {
-        setQuery(next)
-        if (details.reason === "input-change") {
-          typingRef.current = true
-          onValueChange("")
+      onOpenChange={(open) => {
+        if (open) {
+          requestAnimationFrame(() => inputRef.current?.select())
+          return
         }
+        setEditing(false)
+      }}
+      onInputValueChange={(next, details) => {
+        if (details.reason === "input-change") {
+          setQuery(next)
+          setEditing(true)
+          typingRef.current = true
+          if (clearValueOnInput) onValueChange("")
+          return
+        }
+        setQuery(next)
+        setEditing(false)
+        typingRef.current = false
       }}
       itemToStringLabel={(item) => item.label}
       isItemEqualToValue={(a, b) => a.value === b.value}
@@ -103,8 +131,10 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
     >
       <ComboboxPrimitive.InputGroup className="relative w-full">
         <ComboboxPrimitive.Input
+          ref={inputRef}
           disabled={disabled}
           placeholder={placeholder}
+          onFocus={(event) => event.currentTarget.select()}
           data-slot="combobox-input"
           className={cn(
             "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent py-1 pr-8 pl-2.5 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 data-disabled:cursor-not-allowed data-disabled:opacity-50",

@@ -11,7 +11,7 @@ import {
   formatQty,
 } from "@/components/print/print-document";
 import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
-import { findItem, findFinishGood } from "@/lib/mock/data";
+import { findItem, findFinishGood, withoutTransferBtbLines } from "@/lib/mock/data";
 import { useDataStore } from "@/lib/store";
 import { formatDateID } from "@/lib/utils";
 
@@ -59,7 +59,8 @@ export default function PrintBtbPage() {
 
   if (!btb) return <p className="p-8">BTB tidak ditemukan.</p>;
 
-  const itemRows = btb.items.map((l) => {
+  const receipt = withoutTransferBtbLines(btb);
+  const itemRows = receipt.items.map((l) => {
     const item = findItem(l.itemId, items);
     return [
       item?.kode ?? "-",
@@ -70,7 +71,7 @@ export default function PrintBtbPage() {
     ];
   });
 
-  const fgRows = btb.fgs.map((l) => {
+  const fgRows = receipt.fgs.map((l) => {
     const fg = findFinishGood(l.fgId, fgs);
     return [
       fg?.kode ?? "-",

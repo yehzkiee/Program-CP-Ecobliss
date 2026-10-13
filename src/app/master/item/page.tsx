@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { CustomerFilterCombobox } from "@/components/shared/customer-filter-combobox";
 import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
 import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader, StatusBadge } from "@/components/shared/page-header";
@@ -134,14 +135,6 @@ export default function ItemPage() {
     [items],
   );
 
-  const customerFilterItems = useMemo(
-    () => [
-      { value: "all", label: "Semua Customer" },
-      ...customers.map((c) => ({ value: c.id, label: c.nama })),
-    ],
-    [customers],
-  );
-
   const statusFilterItems = useMemo(
     () => [
       { value: "all", label: "Semua Status" },
@@ -221,23 +214,12 @@ export default function ItemPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select
+        <CustomerFilterCombobox
+          customers={customers}
           value={filterCust}
-          onValueChange={(v) => setFilterCust(v ?? "all")}
-          items={customerFilterItems}
-        >
-          <SelectTrigger className="w-full bg-white sm:w-48">
-            <SelectValue placeholder="Customer" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Customer</SelectItem>
-            {customers.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.nama}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onValueChange={setFilterCust}
+          className="w-full sm:w-48"
+        />
         <Select
           value={filterStatus}
           onValueChange={(v) => setFilterStatus(v ?? "all")}

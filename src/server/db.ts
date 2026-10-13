@@ -14,12 +14,22 @@ import {
   gudangList as seedGudang,
   isApprovedAdjustment,
   isTransferGeneratedBtbLine,
+  withoutTransferBtbLines,
   items as seedItems,
   jenisTransaksiList as seedJenis,
   stockOpnames as seedOpnames,
   transfers as seedTransfers,
   users as seedUsers,
 } from "@/lib/mock/data";
+import {
+  loadStateD1,
+  loginUserD1,
+  logoutTokenD1,
+  onWorkers,
+  readStockD1,
+  replacePersistedStateD1,
+  userFromTokenD1,
+} from "@/server/d1-store";
 import type {
   ActivityLog,
   Adjustment,
@@ -670,6 +680,7 @@ function readJsonRows<T>(database: DatabaseSync, sql: string): T[] {
 }
 
 export async function loadState(): Promise<PersistedData> {
+  if (onWorkers()) return loadStateD1();
   return loadStateSqlite();
 }
 
@@ -762,7 +773,10 @@ function loadStateSqlite(database = openDatabase()): PersistedData {
       .prepare("SELECT id, kode, nama, untuk FROM jenis_transaksi ORDER BY kode")
       .all() as JenisTransaksi[],
     boms: readJsonRows<Bom>(database, "SELECT body FROM boms ORDER BY kode"),
-    btbs: readJsonRows<Btb>(database, "SELECT body FROM btbs ORDER BY tanggal DESC, no DESC"),
+    btbs: readJsonRows<Btb>(
+      database,
+      "SELECT body FROM btbs ORDER BY tanggal DESC, no DESC",
+    ).map(withoutTransferBtbLines),
     bkbs: readJsonRows<Bkb>(database, "SELECT body FROM bkbs ORDER BY tanggal DESC, no DESC"),
     transfers: readJsonRows<TransferGudang>(
       database,
@@ -822,6 +836,7 @@ export function publicUser(row: {
 }
 
 export async function loginUser(username: string, password: string) {
+  if (onWorkers()) return loginUserD1(username, password);
   return loginUserSqlite(username, password);
 }
 
@@ -841,6 +856,7 @@ function loginUserSqlite(username: string, password: string) {
 }
 
 export async function userFromToken(token: string | undefined | null) {
+  if (onWorkers()) return userFromTokenD1(token);
   return userFromTokenSqlite(token);
 }
 
@@ -861,11 +877,13 @@ function userFromTokenSqlite(token: string | undefined | null) {
 }
 
 export async function logoutToken(token: string | undefined | null) {
+  if (onWorkers()) return logoutTokenD1(token);
   if (!token) return;
   openDatabase().prepare("DELETE FROM sessions WHERE token = ?").run(token);
 }
 
 export async function readStock() {
+  if (onWorkers()) return readStockD1();
   return readStockSqlite();
 }
 
@@ -886,5 +904,6 @@ function readStockSqlite() {
 }
 
 export async function replacePersistedState(state: PersistedData) {
+  if (onWorkers()) return replacePersistedStateD1(state);
   saveState(openDatabase(), state);
 }

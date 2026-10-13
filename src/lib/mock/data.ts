@@ -5,8 +5,6 @@ import type {
   Bkb,
   Bom,
   Btb,
-  BtbLineFg,
-  BtbLineItem,
   Customer,
   FinishGood,
   Gudang,
@@ -255,15 +253,6 @@ export const btbs: Btb[] = [
         qtySisa: 730,
       },
       {
-        itemId: "i1",
-        batchCustomer: "BC-SA-01",
-        qty: 250,
-        satuan: "LBR",
-        gudangId: "g2",
-        keterangan: "Hasil transfer gudang",
-        qtySisa: 250,
-      },
-      {
         itemId: "i2",
         batchCustomer: "BC-SA-02",
         qty: 50,
@@ -282,15 +271,6 @@ export const btbs: Btb[] = [
         gudangId: "g2",
         keterangan: "FG dari produksi",
         qtySisa: 180,
-      },
-      {
-        fgId: "f1",
-        batchCustomer: "BC-SA-FG01",
-        qty: 20,
-        satuan: "PCS",
-        gudangId: "g3",
-        keterangan: "Hasil transfer gudang",
-        qtySisa: 20,
       },
     ],
   },
@@ -488,6 +468,19 @@ type StockLot = StockRow & { tanggal: string };
 export function isTransferGeneratedBtbLine(keterangan?: string | null) {
   const note = (keterangan ?? "").trim().toLowerCase();
   return note === "hasil transfer gudang" || note === "stok karton di gudang fg";
+}
+
+/** BTB hanya menyimpan penerimaan. Baris hasil transfer dibuang dari dokumen. */
+export function withoutTransferBtbLines<T extends Btb>(doc: T): T {
+  return {
+    ...doc,
+    items: (doc.items ?? []).filter(
+      (line) => !isTransferGeneratedBtbLine(line.keterangan),
+    ),
+    fgs: (doc.fgs ?? []).filter(
+      (line) => !isTransferGeneratedBtbLine(line.keterangan),
+    ),
+  };
 }
 
 function takeFromLots(
@@ -1067,158 +1060,6 @@ export function prefixStoredDocNos<
   };
 }
 
-export type TransferStockLine = {
-  jenis: "item" | "fg";
-  refId: string;
-  qty: number;
-  dariGudangId: string;
-  keGudangId: string;
-  kode?: string;
-  nama?: string;
-};
-
-/**
- * Pindahkan stok antar gudang dengan menyesuaikan qtySisa pada baris BTB
- * (sumber stok sistem). Mengurangi di gudang asal, menambah di gudang tujuan.
- */
-export function applyTransferToBtbs(
-  docs: Btb[],
-  lines: TransferStockLine[],
-): { ok: true; btbs: Btb[] } | { ok: false; error: string } {
-  const next = structuredClone(docs);
-
-  for (const move of lines) {
-    if (!move.refId || move.qty <= 0) continue;
-    if (!move.dariGudangId || !move.keGudangId) {
-      return {
-        ok: false,
-        error: "Gudang asal dan tujuan wajib diisi pada setiap baris",
-      };
-    }
-    if (move.dariGudangId === move.keGudangId) {
-      return {
-        ok: false,
-        error: `Gudang asal dan tujuan tidak boleh sama (${move.kode ?? move.refId})`,
-      };
-    }
-
-    let remaining = move.qty;
-    const label = move.kode
-      ? `${move.kode}${move.nama ? ` - ${move.nama}` : ""}`
-      : move.refId;
-
-    type Lot = {
-      btb: Btb;
-      line: BtbLineItem | BtbLineFg;
-    };
-
-    const lots: Lot[] = [];
-    for (const btb of next) {
-      if (move.jenis === "item") {
-        for (const line of btb.items) {
-          if (
-            line.itemId === move.refId &&
-            line.gudangId === move.dariGudangId &&
-            line.qtySisa > 0
-          ) {
-            lots.push({ btb, line });
-          }
-        }
-      } else {
-        for (const line of btb.fgs) {
-          if (
-            line.fgId === move.refId &&
-            line.gudangId === move.dariGudangId &&
-            line.qtySisa > 0
-          ) {
-            lots.push({ btb, line });
-          }
-        }
-      }
-    }
-
-    // FIFO berdasarkan tanggal terima BTB
-    lots.sort((a, b) => a.btb.tanggalTerima.localeCompare(b.btb.tanggalTerima));
-
-    for (const { btb, line } of lots) {
-      if (remaining <= 0) break;
-      const take = Math.min(remaining, line.qtySisa);
-      if (take <= 0) continue;
-      line.qtySisa -= take;
-
-      if (move.jenis === "item") {
-        const src = line as BtbLineItem;
-        const dest = btb.items.find(
-          (l) =>
-            l.itemId === src.itemId &&
-            l.gudangId === move.keGudangId &&
-            l.batchCustomer === src.batchCustomer,
-        );
-        if (dest) {
-          dest.qtySisa += take;
-        } else {
-          btb.items.push({
-            itemId: src.itemId,
-            batchCustomer: src.batchCustomer,
-            qty: take,
-            satuan: src.satuan,
-            gudangId: move.keGudangId,
-            keterangan: "Hasil transfer gudang",
-            qtySisa: take,
-          });
-        }
-      } else {
-        const src = line as BtbLineFg;
-        const dest = btb.fgs.find(
-          (l) =>
-            l.fgId === src.fgId &&
-            l.gudangId === move.keGudangId &&
-            l.batchCustomer === src.batchCustomer,
-        );
-        if (dest) {
-          dest.qtySisa += take;
-        } else {
-          btb.fgs.push({
-            fgId: src.fgId,
-            batchCustomer: src.batchCustomer,
-            qty: take,
-            satuan: src.satuan,
-            gudangId: move.keGudangId,
-            keterangan: "Hasil transfer gudang",
-            qtySisa: take,
-          });
-        }
-      }
-
-      remaining -= take;
-    }
-
-    if (remaining > 0) {
-      return {
-        ok: false,
-        error: `Stok di gudang asal tidak cukup untuk ${label} (kurang ${remaining})`,
-      };
-    }
-  }
-
-  return { ok: true, btbs: next };
-}
-
-/** Balikkan efek transfer (untuk edit ulang dokumen). */
-export function reverseTransferOnBtbs(
-  docs: Btb[],
-  lines: TransferStockLine[],
-) {
-  return applyTransferToBtbs(
-    docs,
-    lines.map((l) => ({
-      ...l,
-      dariGudangId: l.keGudangId,
-      keGudangId: l.dariGudangId,
-    })),
-  );
-}
-
 export function getLatestBomRevision(bom: Bom) {
   return [...bom.revisions].sort((a, b) => b.revisi - a.revisi)[0];
 }
@@ -1264,6 +1105,7 @@ export function getBatchesForItem(
   for (const btb of docs) {
     btb.items.forEach((line, idx) => {
       if (line.itemId !== itemId) return;
+      if (isTransferGeneratedBtbLine(line.keterangan)) return;
       rows.push({
         id: `${btb.id}-item-${idx}`,
         itemId,

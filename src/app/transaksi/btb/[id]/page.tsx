@@ -21,7 +21,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDocNo, findItem, findFinishGood } from "@/lib/mock/data";
+import {
+  formatDocNo,
+  findItem,
+  findFinishGood,
+  withoutTransferBtbLines,
+} from "@/lib/mock/data";
 import { JENIS_TRANSAKSI_BTB } from "@/lib/jenis-transaksi";
 import { useAuthStore, useDataStore } from "@/lib/store";
 import type { Btb, BtbLineFg, BtbLineItem } from "@/lib/types";
@@ -50,7 +55,11 @@ export default function BtbFormPage() {
   const user = useAuthStore((s) => s.currentUser);
   const { askConfirm, confirmDialog } = useConfirmDialog();
 
-  const existing = isNew ? undefined : btbs.find((b) => b.id === id);
+  const existing = isNew
+    ? undefined
+    : btbs
+        .map(withoutTransferBtbLines)
+        .find((b) => b.id === id);
   const [editing, setEditing] = useState(false);
   const isView = !isNew && !editing;
   const notFound = !isNew && !existing;

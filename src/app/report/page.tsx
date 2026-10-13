@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { CustomerFilterCombobox } from "@/components/shared/customer-filter-combobox";
 import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import type { ExcelRow } from "@/lib/export-to-excel";
 import { PageHeader } from "@/components/shared/page-header";
@@ -230,14 +231,6 @@ export default function ReportPage() {
   const filteredTitipan = useMemo(() => {
     return titipan.filter((r) => matchStockFilters(r));
   }, [titipan, filterCust, filterGudang, selectedBarang]);
-
-  const customerFilterItems = useMemo(
-    () => [
-      { value: "all", label: "Semua Customer" },
-      ...customers.map((c) => ({ value: c.id, label: c.nama })),
-    ],
-    [customers],
-  );
 
   const gudangFilterItems = useMemo(
     () => [
@@ -675,23 +668,12 @@ export default function ReportPage() {
                   className="bg-white"
                 />
               </div>
-              <Select
+              <CustomerFilterCombobox
+                customers={customers}
                 value={filterCust}
-                onValueChange={(v) => setFilterCust(v ?? "all")}
-                items={customerFilterItems}
-              >
-                <SelectTrigger className="w-full bg-white sm:w-44">
-                  <SelectValue placeholder="Customer" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Customer</SelectItem>
-                  {customers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.nama}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onValueChange={setFilterCust}
+                className="w-full sm:w-44"
+              />
               <Select
                 value={filterGudang}
                 onValueChange={(v) => setFilterGudang(v ?? "all")}
