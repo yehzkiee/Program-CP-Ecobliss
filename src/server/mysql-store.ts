@@ -15,6 +15,7 @@ import {
   stockOpnames as seedOpnames,
   transfers as seedTransfers,
   users as seedUsers,
+  withoutTransferBtbLines,
 } from "@/lib/mock/data";
 import type {
   ActivityLog,
@@ -689,7 +690,7 @@ export async function loadStateMysql(): Promise<PersistedData> {
       untuk: String(row.untuk) as JenisTransaksi["untuk"],
     })) satisfies JenisTransaksi[],
     boms: jsonRows<Bom>(bomRows),
-    btbs: jsonRows<Btb>(btbRows),
+    btbs: jsonRows<Btb>(btbRows).map(withoutTransferBtbLines),
     bkbs: jsonRows<Bkb>(bkbRows),
     transfers: jsonRows<TransferGudang>(transferRows),
     stockOpnames: jsonRows<StockOpname>(opnameRows),

@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDocNo, applyTransferToBtbs, reverseTransferOnBtbs } from "@/lib/mock/data";
+import { formatDocNo, buildStockRows } from "@/lib/mock/data";
 import { useAuthStore, useDataStore } from "@/lib/store";
 import type { TransferGudang, TransferLine } from "@/lib/types";
 import { todayISO, uid, formatDateID } from "@/lib/utils";
@@ -34,16 +34,9 @@ function cloneLines(lines: TransferLine[]) {
   return lines.map((l) => ({ ...l }));
 }
 
-function toStockLines(lines: TransferLine[]) {
-  return lines.map((l) => ({
-    jenis: l.jenis,
-    refId: l.refId,
-    qty: l.qty,
-    dariGudangId: l.dariGudangId,
-    keGudangId: l.keGudangId,
-    kode: l.kode,
-    nama: l.nama,
-  }));
+function parseTransferQty(value: string) {
+  const qty = Number(value);
+  return Number.isFinite(qty) ? qty : 0;
 }
 
 export default function TransferFormPage() {
@@ -52,6 +45,9 @@ export default function TransferFormPage() {
   const router = useRouter();
   const transfers = useDataStore((s) => s.transfers);
   const btbs = useDataStore((s) => s.btbs);
+  const bkbs = useDataStore((s) => s.bkbs);
+  const adjustments = useDataStore((s) => s.adjustments);
+  const customers = useDataStore((s) => s.customers);
   const items = useDataStore((s) => s.items);
   const finishGoods = useDataStore((s) => s.finishGoods);
   const gudangList = useDataStore((s) => s.gudangList);
@@ -162,35 +158,55 @@ export default function TransferFormPage() {
       }
     }
 
-    // Stok aktual = qtySisa pada BTB. Transfer harus mengurangi asal + menambah tujuan.
-    let nextBtbs = structuredClone(btbs);
-    if (existing) {
-      const reversed = reverseTransferOnBtbs(
-        nextBtbs,
-        toStockLines(existing.lines),
-      );
-      if (!reversed.ok) {
+    const savedLines = lines.map((line) => ({
+      ...line,
+      qty: Number(line.qty),
+    }));
+    const stock = buildStockRows({
+      customers,
+      gudangList,
+      items,
+      finishGoods,
+      btbs,
+      bkbs,
+      adjustments,
+      transfers: existing
+        ? transfers.filter((doc) => doc.id !== existing.id)
+        : transfers,
+    });
+    const requested = new Map<string, number>();
+    for (const line of savedLines) {
+      const key = `${line.jenis}:${line.refId}:${line.dariGudangId}`;
+      requested.set(key, (requested.get(key) ?? 0) + line.qty);
+    }
+    for (const line of savedLines) {
+      const key = `${line.jenis}:${line.refId}:${line.dariGudangId}`;
+      const available = stock
+        .filter(
+          (row) =>
+            row.jenis === line.jenis &&
+            row.refId === line.refId &&
+            row.gudangId === line.dariGudangId,
+        )
+        .reduce((sum, row) => sum + row.qty, 0);
+      const need = requested.get(key) ?? line.qty;
+      if (need > available) {
+        const label = line.kode
+          ? `${line.kode}${line.nama ? ` - ${line.nama}` : ""}`
+          : line.nama || "barang";
         toast.error(
-          `Gagal membatalkan transfer lama: ${reversed.error}`,
+          `Stok di gudang asal tidak cukup untuk ${label} (tersedia ${available}, diminta ${need})`,
         );
         return;
       }
-      nextBtbs = reversed.btbs;
     }
-
-    const moved = applyTransferToBtbs(nextBtbs, toStockLines(lines));
-    if (!moved.ok) {
-      toast.error(moved.error);
-      return;
-    }
-    useDataStore.setState({ btbs: moved.btbs });
 
     const payload: TransferGudang = {
       id: existing?.id ?? uid("tf"),
       no: existing?.no ?? formatDocNo("TG", tanggal, transfers.length + 1),
       tanggal,
       keterangan,
-      lines,
+      lines: savedLines,
       createdAt: existing?.createdAt ?? new Date().toISOString(),
     };
     upsert(payload);
@@ -433,7 +449,10 @@ export default function TransferFormPage() {
                     value={line.qty}
                     onChange={(e) => {
                       const next = [...lines];
-                      next[idx] = { ...line, qty: Number(e.target.value) || 0 };
+                      next[idx] = {
+                        ...line,
+                        qty: parseTransferQty(e.target.value),
+                      };
                       setLines(next);
                     }}
                   />

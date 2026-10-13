@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Trash2, Wand2 } from "lucide-react";
-import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
+import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
 import { BackLink, PageHeader } from "@/components/shared/page-header";
 import { DetailField, DocLink } from "@/components/shared/detail-field";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,17 @@ function formatBtbSumberLabel(btbNo: string, tanggal?: string) {
   const no = (btbNo || "").trim() || "-";
   if (!tanggal) return no;
   return `${no} · ${formatDateShort(tanggal)}`;
+}
+
+/** Opsi No. BTB beserta sisa stok aktual lot tersebut. */
+function formatBtbStockLabel(
+  btbNo: string,
+  tanggal: string | undefined,
+  qtySisa: number,
+) {
+  const no = (btbNo || "").trim() || "-";
+  const tgl = tanggal ? formatDateShort(tanggal) : "-";
+  return `${no} - ${tgl} (Stok: ${formatQty(qtySisa)})`;
 }
 
 export default function BkbFormPage() {
@@ -336,7 +347,77 @@ export default function BkbFormPage() {
     setEditing(false);
   }
 
+  function materialLot(line: Pick<BkbLineItem, "btbId" | "itemId" | "gudangId" | "batchCustomer">) {
+    if (!line.btbId || !line.itemId) return null;
+    const btb = btbs.find((doc) => doc.id === line.btbId);
+    if (!btb) return null;
+    const rows = btb.items.filter((row) => row.itemId === line.itemId);
+    const inGudang = line.gudangId
+      ? rows.filter((row) => row.gudangId === line.gudangId)
+      : rows;
+    const pool = inGudang.length > 0 ? inGudang : rows;
+    if (line.batchCustomer) {
+      const exact = pool.find((row) => row.batchCustomer === line.batchCustomer);
+      if (exact) return exact;
+    }
+    return pool[0] ?? null;
+  }
+
+  /** Sisa stok aktual lot BTB di state, sebelum qty form yang belum disimpan. */
+  function materialLotStock(line: BkbLineItem) {
+    return materialLot(line)?.qtySisa ?? null;
+  }
+
+  /**
+   * Batas qty baris ini: stok lot, ditambah qty yang dokumen ini sudah potong
+   * saat edit, dikurangi qty baris lain pada form untuk lot yang sama.
+   */
+  function materialMaxQty(idx: number) {
+    const line = lineItems[idx];
+    if (!line) return null;
+    const stock = materialLotStock(line);
+    if (stock === null) return null;
+    const lot = materialLot(line);
+    let allowed = stock;
+    if (existing && lot) {
+      allowed += existing.items
+        .filter(
+          (saved) =>
+            saved.btbId === line.btbId &&
+            saved.itemId === line.itemId &&
+            saved.gudangId === lot.gudangId &&
+            saved.batchCustomer === lot.batchCustomer,
+        )
+        .reduce((sum, saved) => sum + saved.qty, 0);
+    }
+    const reserved = lineItems.reduce((sum, other, otherIdx) => {
+      if (otherIdx === idx) return sum;
+      if (other.btbId !== line.btbId || other.itemId !== line.itemId) return sum;
+      const otherLot = materialLot(other);
+      if (
+        lot &&
+        otherLot &&
+        (otherLot.gudangId !== lot.gudangId ||
+          otherLot.batchCustomer !== lot.batchCustomer)
+      ) {
+        return sum;
+      }
+      return sum + (Number(other.qty) || 0);
+    }, 0);
+    return Math.max(0, allowed - reserved);
+  }
+
+  function materialQtyOver(idx: number) {
+    const maxQty = materialMaxQty(idx);
+    if (maxQty === null) return false;
+    return lineItems[idx].qty > maxQty;
+  }
+
   function save() {
+    if (lineItems.some((_, idx) => materialQtyOver(idx))) {
+      toast.error("Qty material melebihi stok BTB yang tersedia");
+      return;
+    }
     if (lineItems.length === 0 && lineFgs.length === 0) {
       toast.error("Minimal satu baris pengeluaran");
       return;
@@ -402,6 +483,7 @@ export default function BkbFormPage() {
 
   const itemSources = sources.filter((s) => s.jenis === "item");
   const fgSources = sources.filter((s) => s.jenis === "fg");
+  const materialQtyInvalid = lineItems.some((_, idx) => materialQtyOver(idx));
 
   if (notFound) {
     return (
@@ -464,6 +546,7 @@ export default function BkbFormPage() {
                   <Button
                     className="bg-emerald-700 hover:bg-emerald-800"
                     onClick={save}
+                    disabled={materialQtyInvalid}
                   >
                     Simpan
                   </Button>
@@ -732,14 +815,17 @@ export default function BkbFormPage() {
                       setLineItems(next);
                     }}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="h-8 w-full min-w-0 gap-1.5 overflow-hidden py-0 pr-2 pl-2.5 [&_[data-slot=select-value]]:flex! [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:flex-nowrap [&_[data-slot=select-value]]:items-center [&_[data-slot=select-value]]:gap-1.5 [&_[data-slot=select-value]]:overflow-hidden [&_[data-slot=select-value]]:[-webkit-line-clamp:unset] [&_[data-slot=select-value]]:[-webkit-box-orient:horizontal]">
                       <SelectValue placeholder="Pilih material">
                         {(() => {
                           const item = findItem(line.itemId, items);
                           return item ? (
-                            <ItemNameWithType jenis="item">
-                              {formatKodeNama(item.kode, item.nama)}
-                            </ItemNameWithType>
+                            <>
+                              <span className="min-w-0 flex-1 truncate">
+                                {formatKodeNama(item.kode, item.nama)}
+                              </span>
+                              <ItemTypeBadge jenis="item" />
+                            </>
                           ) : undefined;
                         })()}
                       </SelectValue>
@@ -747,7 +833,7 @@ export default function BkbFormPage() {
                     <SelectContent>
                       {items.map((i) => (
                         <SelectItem key={i.id} value={i.id}>
-                          <ItemNameWithType jenis="item">
+                          <ItemNameWithType jenis="item" className="flex-nowrap">
                             {i.kode} - {i.nama}
                           </ItemNameWithType>
                         </SelectItem>
@@ -763,7 +849,11 @@ export default function BkbFormPage() {
                       .filter((s) => s.refId === line.itemId)
                       .map((s) => ({
                         value: s.btbId,
-                        label: formatBtbSumberLabel(s.btbNo, s.tanggalTerima),
+                        label: formatBtbStockLabel(
+                          s.btbNo,
+                          s.tanggalTerima,
+                          s.qtySisa,
+                        ),
                       }))}
                     onValueChange={(v) => {
                       const vv = v ?? "";
@@ -785,19 +875,24 @@ export default function BkbFormPage() {
                     <SelectTrigger className="w-full min-w-[12rem]">
                       <SelectValue placeholder="Pilih No. BTB">
                         {line.btbId
-                          ? formatBtbSumberLabel(
+                          ? formatBtbStockLabel(
                               line.btbNo,
                               line.btbTanggalTerima,
+                              materialLotStock(line) ?? 0,
                             )
                           : undefined}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,28rem)]">
+                    <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,40rem)]">
                       {itemSources
                         .filter((s) => s.refId === line.itemId)
                         .map((s) => (
                           <SelectItem key={s.key} value={s.btbId}>
-                            {formatBtbSumberLabel(s.btbNo, s.tanggalTerima)}
+                            {formatBtbStockLabel(
+                              s.btbNo,
+                              s.tanggalTerima,
+                              s.qtySisa,
+                            )}
                           </SelectItem>
                         ))}
                     </SelectContent>
@@ -807,7 +902,10 @@ export default function BkbFormPage() {
                   <Label className="text-xs">Qty</Label>
                   <Input
                     type="number"
+                    min={0}
+                    max={materialMaxQty(idx) ?? undefined}
                     value={line.qty}
+                    aria-invalid={materialQtyOver(idx) || undefined}
                     onChange={(e) => {
                       const next = [...lineItems];
                       next[idx] = { ...line, qty: Number(e.target.value) || 0 };
@@ -840,6 +938,12 @@ export default function BkbFormPage() {
                     <Trash2 className="size-4" />
                   </Button>
                 </div>
+                {materialQtyOver(idx) ? (
+                  <p className="text-xs text-destructive lg:col-span-8">
+                    Qty melebihi stok BTB yang tersedia (Maks:{" "}
+                    {formatQty(materialMaxQty(idx) ?? 0)})
+                  </p>
+                ) : null}
               </div>
             ),
           )}
@@ -1065,7 +1169,11 @@ export default function BkbFormPage() {
       </Card>
 
       {isNew && (
-        <Button className="bg-emerald-700 hover:bg-emerald-800" onClick={save}>
+        <Button
+          className="bg-emerald-700 hover:bg-emerald-800"
+          onClick={save}
+          disabled={materialQtyInvalid}
+        >
           Simpan BKB
         </Button>
       )}

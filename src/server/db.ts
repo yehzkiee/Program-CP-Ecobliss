@@ -34,6 +34,7 @@ import {
   stockOpnames as seedOpnames,
   transfers as seedTransfers,
   users as seedUsers,
+  withoutTransferBtbLines,
 } from "@/lib/mock/data";
 import type {
   ActivityLog,
@@ -769,7 +770,10 @@ function loadStateSqlite(database = openDatabase()): PersistedData {
       .prepare("SELECT id, kode, nama, untuk FROM jenis_transaksi ORDER BY kode")
       .all() as JenisTransaksi[],
     boms: readJsonRows<Bom>(database, "SELECT body FROM boms ORDER BY kode"),
-    btbs: readJsonRows<Btb>(database, "SELECT body FROM btbs ORDER BY tanggal DESC, no DESC"),
+    btbs: readJsonRows<Btb>(
+      database,
+      "SELECT body FROM btbs ORDER BY tanggal DESC, no DESC",
+    ).map(withoutTransferBtbLines),
     bkbs: readJsonRows<Bkb>(database, "SELECT body FROM bkbs ORDER BY tanggal DESC, no DESC"),
     transfers: readJsonRows<TransferGudang>(
       database,

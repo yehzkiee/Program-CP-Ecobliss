@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { CustomerFilterCombobox } from "@/components/shared/customer-filter-combobox";
 import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -15,13 +16,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -71,14 +65,6 @@ export default function CustomerPage() {
     [customers, filterCust],
   );
 
-  const filterItems = useMemo(
-    () => [
-      { value: "all", label: "Semua Customer" },
-      ...customers.map((c) => ({ value: c.id, label: c.nama })),
-    ],
-    [customers],
-  );
-
   function openCreate() {
     setForm({ ...empty, id: uid("cust") });
     setOpen(true);
@@ -114,23 +100,12 @@ export default function CustomerPage() {
       />
 
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Select
+        <CustomerFilterCombobox
+          customers={customers}
           value={filterCust}
-          onValueChange={(v) => setFilterCust(v ?? "all")}
-          items={filterItems}
-        >
-          <SelectTrigger className="w-full max-w-sm bg-white">
-            <SelectValue placeholder="Pilih Customer..." />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Customer</SelectItem>
-            {customers.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.nama}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onValueChange={setFilterCust}
+          className="w-full max-w-sm"
+        />
         <ExportExcelButton
           page="Customer"
           rows={filtered.map((c) => ({
