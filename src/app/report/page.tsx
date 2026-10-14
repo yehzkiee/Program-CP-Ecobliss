@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { CustomerFilterCombobox } from "@/components/shared/customer-filter-combobox";
 import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import type { ExcelRow } from "@/lib/export-to-excel";
@@ -41,13 +41,36 @@ import {
 import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
 import { SearchableCombobox } from "@/components/ui/combobox";
 import { useDataStore } from "@/lib/store";
-import type { AdjustmentStatus } from "@/lib/types";
+import type { AdjustmentStatus, StockRow } from "@/lib/types";
 import {
   formatDateID,
   formatStatusLabel,
   formatKodeNama,
   formatQty,
 } from "@/lib/utils";
+
+function filterItemByKodeNama(
+  item: { kode: string; nama: string },
+  query: string,
+) {
+  const keyword = query.toLowerCase();
+  return (
+    item.kode.toLowerCase().includes(keyword) ||
+    item.nama.toLowerCase().includes(keyword)
+  );
+}
+
+function filterItemByLabelKodeNama(
+  item: { label: string; kode: string; nama: string },
+  query: string,
+) {
+  const keyword = query.toLowerCase();
+  return (
+    item.label.toLowerCase().includes(keyword) ||
+    item.kode.toLowerCase().includes(keyword) ||
+    item.nama.toLowerCase().includes(keyword)
+  );
+}
 
 type ReportItem = { id: string; label: string };
 
@@ -215,22 +238,27 @@ export default function ReportPage() {
     [customers, items, finishGoods, gudangList, btbs, bkbs, transfers],
   );
 
-  function matchStockFilters(row: (typeof stock)[number]) {
-    const matchCust = filterCust === "all" || row.customerId === filterCust;
-    const matchGudang = filterGudang === "all" || row.gudangId === filterGudang;
-    const matchBarang =
-      !selectedBarang ||
-      (row.jenis === selectedBarang.jenis && row.refId === selectedBarang.refId);
-    return matchCust && matchGudang && matchBarang;
-  }
+  const matchStockFilters = useCallback(
+    (row: StockRow) => {
+      const matchCust = filterCust === "all" || row.customerId === filterCust;
+      const matchGudang =
+        filterGudang === "all" || row.gudangId === filterGudang;
+      const matchBarang =
+        !selectedBarang ||
+        (row.jenis === selectedBarang.jenis &&
+          row.refId === selectedBarang.refId);
+      return matchCust && matchGudang && matchBarang;
+    },
+    [filterCust, filterGudang, selectedBarang],
+  );
 
   const filteredStock = useMemo(() => {
     return stock.filter((r) => matchStockFilters(r));
-  }, [stock, filterCust, filterGudang, selectedBarang]);
+  }, [stock, matchStockFilters]);
 
   const filteredTitipan = useMemo(() => {
     return titipan.filter((r) => matchStockFilters(r));
-  }, [titipan, filterCust, filterGudang, selectedBarang]);
+  }, [titipan, matchStockFilters]);
 
   const gudangFilterItems = useMemo(
     () => [
@@ -651,13 +679,7 @@ export default function ReportPage() {
                   items={barangOptions}
                   value={selectedItem}
                   onValueChange={setSelectedItem}
-                  filterItem={(item, query) => {
-                    const keyword = query.toLowerCase();
-                    return (
-                      item.kode.toLowerCase().includes(keyword) ||
-                      item.nama.toLowerCase().includes(keyword)
-                    );
-                  }}
+                  filterItem={filterItemByKodeNama}
                   renderItem={(item) => (
                     <ItemNameWithType jenis={item.jenis}>
                       {item.label}
@@ -751,14 +773,7 @@ export default function ReportPage() {
                   items={historiBarangOptions}
                   value={filterBarang}
                   onValueChange={setFilterBarang}
-                  filterItem={(item, query) => {
-                    const keyword = query.toLowerCase();
-                    return (
-                      item.label.toLowerCase().includes(keyword) ||
-                      item.kode.toLowerCase().includes(keyword) ||
-                      item.nama.toLowerCase().includes(keyword)
-                    );
-                  }}
+                  filterItem={filterItemByLabelKodeNama}
                   renderItem={(item) =>
                     item.jenis === "all" ? (
                       item.label

@@ -88,7 +88,7 @@ export default function PrintOpnameRekapPage() {
     .filter((r) => r.jenis === "item")
     .map((r) => [
       r.kode,
-      <ItemNameWithType jenis="item">{r.nama}</ItemNameWithType>,
+      <ItemNameWithType key="nama" jenis="item">{r.nama}</ItemNameWithType>,
       custMap[r.customerId]?.nama ?? "-",
       gudangMap[r.gudangId]?.nama ?? "-",
       String(r.qty),
@@ -98,7 +98,7 @@ export default function PrintOpnameRekapPage() {
     .filter((r) => r.jenis === "fg")
     .map((r) => [
       r.kode,
-      <ItemNameWithType jenis="fg">{r.nama}</ItemNameWithType>,
+      <ItemNameWithType key="nama" jenis="fg">{r.nama}</ItemNameWithType>,
       custMap[r.customerId]?.nama ?? "-",
       gudangMap[r.gudangId]?.nama ?? "-",
       String(r.qty),

@@ -64,7 +64,7 @@ export default function PrintBtbPage() {
     const item = findItem(l.itemId, items);
     return [
       item?.kode ?? "-",
-      <ItemNameWithType jenis="item">{item?.nama ?? "-"}</ItemNameWithType>,
+      <ItemNameWithType key="nama" jenis="item">{item?.nama ?? "-"}</ItemNameWithType>,
       l.batchCustomer || "-",
       formatQty(l.qty, l.satuan),
       gudangMap[l.gudangId]?.nama ?? "-",
@@ -75,7 +75,7 @@ export default function PrintBtbPage() {
     const fg = findFinishGood(l.fgId, fgs);
     return [
       fg?.kode ?? "-",
-      <ItemNameWithType jenis="fg">{fg?.nama ?? "-"}</ItemNameWithType>,
+      <ItemNameWithType key="nama" jenis="fg">{fg?.nama ?? "-"}</ItemNameWithType>,
       l.batchCustomer || "-",
       formatQty(l.qty, l.satuan),
       gudangMap[l.gudangId]?.nama ?? "-",

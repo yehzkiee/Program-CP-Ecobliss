@@ -113,10 +113,6 @@ export default function BkbFormPage() {
     })),
   );
 
-  const itemMap = useMemo(
-    () => Object.fromEntries(items.map((i) => [i.id, i])),
-    [items],
-  );
   const fgMap = useMemo(
     () => Object.fromEntries(finishGoods.map((f) => [f.id, f])),
     [finishGoods],
@@ -205,7 +201,7 @@ export default function BkbFormPage() {
       });
     }
     return opts;
-  }, [btbs, gudangAsal, itemMap, fgMap]);
+  }, [btbs, finishGoods, gudangAsal, items]);
 
   function allocateFromSources(
     jenis: "item" | "fg",

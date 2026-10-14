@@ -1,4 +1,9 @@
-import { loadState, replacePersistedState, type PersistedData } from "@/server/db";
+import {
+  loadState,
+  readRevision,
+  replacePersistedState,
+  type PersistedData,
+} from "@/server/db";
 import { currentUser } from "@/server/session";
 import type { User } from "@/lib/types";
 
@@ -12,7 +17,11 @@ export async function GET() {
   if (!user) {
     return Response.json({ error: "Belum login" }, { status: 401 });
   }
-  return Response.json({ state: await loadState(), version: VERSION });
+  return Response.json({
+    state: await loadState(),
+    version: VERSION,
+    revision: await readRevision(),
+  });
 }
 
 export async function PUT(request: Request) {
@@ -22,9 +31,24 @@ export async function PUT(request: Request) {
   }
   const body = (await request.json().catch(() => null)) as {
     state?: PersistedData;
+    revision?: number;
   } | null;
   if (!body?.state?.customers || !body.state.users) {
     return Response.json({ error: "Data tidak lengkap" }, { status: 400 });
+  }
+  const currentRevision = await readRevision();
+  if (
+    typeof body.revision === "number" &&
+    body.revision !== currentRevision
+  ) {
+    return Response.json(
+      {
+        error:
+          "Data sudah berubah di server. Muat ulang halaman lalu ulangi perubahan terakhir.",
+        revision: currentRevision,
+      },
+      { status: 409 },
+    );
   }
   const next = normalizeState(body.state);
   const previous = await loadState();
@@ -34,8 +58,8 @@ export async function PUT(request: Request) {
       { status: 403 },
     );
   }
-  await replacePersistedState(next);
-  return Response.json({ ok: true });
+  const revision = await replacePersistedState(next);
+  return Response.json({ ok: true, revision });
 }
 
 function forbiddenForUser(previous: PersistedData, next: PersistedData) {

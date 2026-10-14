@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { stripBasePath } from "@/lib/base-path";
 import {
   ArrowLeftRight,
   Boxes,
@@ -61,7 +62,7 @@ const nav = [
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+  const pathname = stripBasePath(usePathname());
   const router = useRouter();
   const user = useAuthStore((s) => s.currentUser);
   const logout = useAuthStore((s) => s.logout);

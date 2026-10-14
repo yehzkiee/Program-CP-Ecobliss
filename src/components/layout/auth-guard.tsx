@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore, useDataStore } from "@/lib/store";
+import { stripBasePath, withBasePath } from "@/lib/base-path";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const user = useAuthStore((s) => s.currentUser);
+  const userId = useAuthStore((s) => s.currentUser?.id ?? null);
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = stripBasePath(usePathname());
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -19,10 +21,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!hydrated || !user) return;
+    if (!hydrated || !userId) return;
     let cancelled = false;
     void (async () => {
-      const res = await fetch("/api/auth/me");
+      const res = await fetch(withBasePath("/api/auth/me"));
       if (cancelled) return;
       if (!res.ok) {
         useAuthStore.getState().logout();
@@ -33,7 +35,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [hydrated, user?.id]);
+  }, [hydrated, userId]);
 
   useEffect(() => {
     if (!hydrated) return;

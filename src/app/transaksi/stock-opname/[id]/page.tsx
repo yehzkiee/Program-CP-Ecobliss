@@ -41,6 +41,16 @@ import { todayISO, uid } from "@/lib/utils";
 
 type DraftLine = StockOpnameLine & { qtyAktualInput: number };
 
+function filterItemByKodeNama(
+  item: { kode: string; nama: string },
+  query: string,
+) {
+  const q = query.toLowerCase();
+  return (
+    item.kode.toLowerCase().includes(q) || item.nama.toLowerCase().includes(q)
+  );
+}
+
 function metodeLabel(metode: OpnameMetode) {
   if (metode === "per_batch") return "Per Batch";
   if (metode === "per_gudang") return "Per Gudang";
@@ -750,13 +760,7 @@ export default function StockOpnameFormPage() {
                       items={availableToAdd}
                       value={pickerValue}
                       onValueChange={setPickerValue}
-                      filterItem={(item, query) => {
-                        const q = query.toLowerCase();
-                        return (
-                          item.kode.toLowerCase().includes(q) ||
-                          item.nama.toLowerCase().includes(q)
-                        );
-                      }}
+                      filterItem={filterItemByKodeNama}
                       renderItem={(item) => (
                         <ItemNameWithType jenis={item.jenis}>
                           {item.label}
