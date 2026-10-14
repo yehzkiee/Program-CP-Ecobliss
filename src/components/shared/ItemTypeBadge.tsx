@@ -41,8 +41,8 @@ export function ItemNameWithType({
   className?: string
 }) {
   return (
-    <span className={cn("inline-flex flex-wrap items-center gap-1.5", className)}>
-      <span>{children}</span>
+    <span className={cn("inline-flex max-w-full min-w-0 flex-nowrap items-center gap-2", className)}>
+      <span className="min-w-0 truncate">{children}</span>
       <ItemTypeBadge jenis={jenis} />
     </span>
   )

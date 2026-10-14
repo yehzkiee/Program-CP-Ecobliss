@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
+import { SearchableCombobox } from "@/components/ui/combobox";
 import {
   BackLink,
   PageHeader,
@@ -33,11 +34,38 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getLatestBomRevision } from "@/lib/mock/data";
 import { useDataStore } from "@/lib/store";
-import type { FinishGood, StatusAktif } from "@/lib/types";
+import type { Customer, FinishGood, StatusAktif } from "@/lib/types";
 import { formatDateID } from "@/lib/utils";
 
 const UOM_OPTIONS = ["PCS", "BOX", "SET", "PACK", "ROLL"] as const;
 const UOM_NONE = "-";
+
+function customerInitials(nama: string): string {
+  const cleaned = nama.replace(/^(PT|CV|UD)\.?\s+/i, "").trim();
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "XX";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function generateBatchCustomer(
+  customerId: string,
+  customers: Customer[],
+  finishGoods: FinishGood[],
+  excludeId?: string,
+): string {
+  const customer = customers.find((c) => c.id === customerId);
+  const initials = customerInitials(customer?.nama ?? "XX");
+  const prefix = `BC-${initials}-FG`;
+  const seqs = finishGoods
+    .filter((f) => f.customerId === customerId && f.id !== excludeId)
+    .map((f) => {
+      const match = (f.batchCustomer ?? "").match(/FG(\d+)$/i);
+      return match ? Number(match[1]) : 0;
+    });
+  const next = (seqs.length ? Math.max(...seqs) : 0) + 1;
+  return `${prefix}${String(next).padStart(2, "0")}`;
+}
 
 export default function FinishGoodDetailPage() {
   const params = useParams<{ id: string }>();
@@ -88,7 +116,18 @@ export default function FinishGoodDetailPage() {
   const draft = form ?? fg;
 
   function startEdit() {
-    setForm({ ...fg! });
+    const current = fg!;
+    const batchCustomer =
+      current.batchCustomer?.trim() ||
+      (current.customerId
+        ? generateBatchCustomer(
+            current.customerId,
+            customers,
+            finishGoods,
+            current.id,
+          )
+        : "");
+    setForm({ ...current, batchCustomer });
     setEditing(true);
   }
 
@@ -97,7 +136,15 @@ export default function FinishGoodDetailPage() {
       toast.error("Lengkapi kode, nama, dan customer");
       return;
     }
-    upsert(form);
+    const batchCustomer =
+      form.batchCustomer.trim() ||
+      generateBatchCustomer(
+        form.customerId,
+        customers,
+        finishGoods,
+        form.id,
+      );
+    upsert({ ...form, batchCustomer });
     toast.success("Finish Good disimpan");
     setEditing(false);
     setForm(null);
@@ -176,30 +223,33 @@ export default function FinishGoodDetailPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>Customer</Label>
-                <Select
+                <SearchableCombobox
+                  items={customers.map((customer) => ({
+                    value: customer.id,
+                    label: customer.nama,
+                  }))}
                   value={draft.customerId}
-                  onValueChange={(v) =>
-                    setForm({ ...draft, customerId: v ?? "" })
+                  onValueChange={(next) =>
+                    setForm({ ...draft, customerId: next ?? "" })
                   }
-                  items={customers.map((c) => ({ value: c.id, label: c.nama }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.nama}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder="Cari nama customer..."
+                  emptyText="Tidak ada customer yang cocok"
+                  itemNoun="customer"
+                />
               </div>
-              <div className="space-y-1.5">
-                <Label>Batch Customer</Label>
-                <p className="text-sm text-slate-900">
-                  {draft.batchCustomer || "-"}
-                </p>
+              <div className="min-w-0 space-y-1.5">
+                <Label htmlFor="edit-finish-good-batch-customer">
+                  Batch Customer
+                </Label>
+                <Input
+                  id="edit-finish-good-batch-customer"
+                  type="text"
+                  className="w-full"
+                  value={draft.batchCustomer}
+                  onChange={(e) =>
+                    setForm({ ...draft, batchCustomer: e.target.value })
+                  }
+                />
               </div>
               <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
                 <p className="text-sm font-medium text-slate-700">

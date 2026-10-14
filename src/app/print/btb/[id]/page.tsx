@@ -11,7 +11,7 @@ import {
   formatQty,
 } from "@/components/print/print-document";
 import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
-import { findItem, findFinishGood, withoutTransferBtbLines } from "@/lib/mock/data";
+import { btbBatchName, findItem, findFinishGood, findBtbDocument, withoutTransferBtbLines } from "@/lib/mock/data";
 import { useDataStore } from "@/lib/store";
 import { formatDateID } from "@/lib/utils";
 
@@ -42,7 +42,7 @@ export default function PrintBtbPage() {
     return useDataStore.persist.onFinishHydration(finish);
   }, []);
 
-  const btb = useMemo(() => btbs.find((b) => b.id === id), [btbs, id]);
+  const btb = useMemo(() => findBtbDocument(btbs, id), [btbs, id]);
 
   const gudangMap = useMemo(
     () => Object.fromEntries(gudangList.map((g) => [g.id, g])),
@@ -60,6 +60,7 @@ export default function PrintBtbPage() {
   if (!btb) return <p className="p-8">BTB tidak ditemukan.</p>;
 
   const receipt = withoutTransferBtbLines(btb);
+  const batchName = btbBatchName(receipt);
   const itemRows = receipt.items.map((l) => {
     const item = findItem(l.itemId, items);
     return [
@@ -98,6 +99,12 @@ export default function PrintBtbPage() {
             Tanggal Terima: {formatDateID(btb.tanggalTerima)}
             {" · "}
             {jenis.find((j) => j.id === btb.jenisTransaksiId)?.nama ?? "-"}
+            {batchName ? (
+              <>
+                {" · "}
+                Batch: {batchName}
+              </>
+            ) : null}
             {btb.customerId ? (
               <>
                 {" · "}

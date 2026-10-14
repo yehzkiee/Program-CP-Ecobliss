@@ -8,13 +8,7 @@ import type { ExcelRow } from "@/lib/export-to-excel";
 import { PageHeader } from "@/components/shared/page-header";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableCombobox } from "@/components/ui/combobox";
 import {
   SidebarNav,
   SidebarNavGroup,
@@ -39,7 +33,6 @@ import {
   isTransferGeneratedBtbLine,
 } from "@/lib/mock/data";
 import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
-import { SearchableCombobox } from "@/components/ui/combobox";
 import { useDataStore } from "@/lib/store";
 import type { AdjustmentStatus, StockRow } from "@/lib/types";
 import {
@@ -404,9 +397,7 @@ export default function ReportPage() {
           tanggal: t.tanggal,
           jenis: "Transfer",
           no: t.no,
-          keterangan:
-            t.keterangan ||
-            `${formatKodeNama(line.kode, line.nama)} dipindah`,
+          keterangan: `${formatKodeNama(line.kode, line.nama)} · ${line.btbNo || "tanpa No. BTB"} · qty ${line.qty}`,
           qty: line.qty,
           delta: movementDelta("Transfer", line.qty),
           satuan,
@@ -428,7 +419,7 @@ export default function ReportPage() {
           tanggal: a.tanggal,
           jenis: "Adjustment",
           no: a.no,
-          keterangan: `${formatStatusLabel(a.status)} · ${formatKodeNama(line.kode, line.nama)}${a.stockOpnameNo ? ` · ${a.stockOpnameNo}` : ""}`,
+          keterangan: `${formatStatusLabel(a.status)} · ${formatKodeNama(line.kode, line.nama)} · ${line.btbNo || "tanpa No. BTB"} · out ${line.out} · in ${line.in}${a.stockOpnameNo ? ` · ${a.stockOpnameNo}` : ""}`,
           qty,
           delta: movementDelta("Adjustment", qty, {
             in: line.in,
@@ -696,23 +687,21 @@ export default function ReportPage() {
                 onValueChange={setFilterCust}
                 className="w-full sm:w-44"
               />
-              <Select
-                value={filterGudang}
-                onValueChange={(v) => setFilterGudang(v ?? "all")}
-                items={gudangFilterItems}
-              >
-                <SelectTrigger className="w-full bg-white sm:w-44">
-                  <SelectValue placeholder="Gudang" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Gudang</SelectItem>
-                  {gudangList.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>
-                      {g.nama}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="w-full min-w-0 sm:w-44">
+                <SearchableCombobox
+                  items={gudangFilterItems}
+                  value={filterGudang}
+                  onValueChange={(next) => setFilterGudang(next || "all")}
+                  filterItem={(item, query) =>
+                    item.value === "all" ||
+                    item.label.toLowerCase().includes(query.toLowerCase())
+                  }
+                  placeholder="Cari gudang..."
+                  emptyText="Tidak ada gudang yang cocok"
+                  itemNoun="gudang"
+                  className="bg-white"
+                />
+              </div>
             </>
           )}
             <ExportExcelButton

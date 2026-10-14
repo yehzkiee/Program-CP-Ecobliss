@@ -10,13 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableCombobox } from "@/components/ui/combobox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buildStockRows, formatDocNo } from "@/lib/mock/data";
 import { useAuthStore, useDataStore } from "@/lib/store";
@@ -733,28 +726,20 @@ export default function StockOpnameFormPage() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                 <div className="min-w-0 flex-1">
                   {metode === "per_gudang" ? (
-                    <Select
-                      value={pickerValue}
-                      onValueChange={(v) => setPickerValue(v ?? "")}
+                    <SearchableCombobox
                       items={availableGudang}
-                    >
-                      <SelectTrigger className="h-8 w-full bg-white">
-                        <SelectValue placeholder="Pilih gudang..." />
-                      </SelectTrigger>
-                      <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,36rem)]">
-                        {availableGudang.length === 0 ? (
-                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                            Semua gudang sudah ditambahkan
-                          </div>
-                        ) : (
-                          availableGudang.map((g) => (
-                            <SelectItem key={g.value} value={g.value}>
-                              {g.label}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
+                      value={pickerValue}
+                      onValueChange={setPickerValue}
+                      placeholder={
+                        availableGudang.length === 0
+                          ? "Semua gudang sudah ditambahkan"
+                          : "Cari gudang..."
+                      }
+                      emptyText="Tidak ada gudang yang cocok"
+                      disabled={availableGudang.length === 0}
+                      itemNoun="gudang"
+                      className="bg-white"
+                    />
                   ) : (
                     <SearchableCombobox
                       items={availableToAdd}

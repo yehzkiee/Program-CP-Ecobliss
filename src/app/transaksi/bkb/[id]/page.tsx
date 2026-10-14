@@ -6,11 +6,12 @@ import { toast } from "sonner";
 import { Plus, Trash2, Wand2 } from "lucide-react";
 import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
 import { BackLink, PageHeader } from "@/components/shared/page-header";
-import { DetailField, DocLink } from "@/components/shared/detail-field";
+import { DetailField } from "@/components/shared/detail-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { SearchableCombobox } from "@/components/ui/combobox";
 import {
   Select,
   SelectContent,
@@ -19,7 +20,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDocNo, getLatestBomRevision, findItem, findFinishGood } from "@/lib/mock/data";
+import {
+  formatBtbLotLabel,
+  formatDocNo,
+  getLatestBomRevision,
+  findItem,
+  findFinishGood,
+  listBtbBatchStock,
+  lotsForCustomer,
+  syncBtbQtySisa,
+} from "@/lib/mock/data";
 import { JENIS_TRANSAKSI_BKB } from "@/lib/jenis-transaksi";
 import { useAuthStore, useDataStore } from "@/lib/store";
 import type { Bkb, BkbLineFg, BkbLineItem } from "@/lib/types";
@@ -47,23 +57,198 @@ type BtbSourceOption = {
   qtySisa: number;
 };
 
-/** Label ringkas No. BTB + tanggal agar muat di kolom sempit. */
-function formatBtbSumberLabel(btbNo: string, tanggal?: string) {
-  const no = (btbNo || "").trim() || "-";
-  if (!tanggal) return no;
-  return `${no} · ${formatDateShort(tanggal)}`;
+function formatBatchStockLabel(
+  btbNo: string,
+  batch: string,
+  qtySisa: number,
+  gudangName?: string,
+) {
+  return formatBtbLotLabel(
+    { btbNo, batchCustomer: batch, qty: qtySisa },
+    gudangName,
+  );
 }
 
-/** Opsi No. BTB beserta sisa stok aktual lot tersebut. */
-function formatBtbStockLabel(
-  btbNo: string,
-  tanggal: string | undefined,
-  qtySisa: number,
-) {
-  const no = (btbNo || "").trim() || "-";
-  const tgl = tanggal ? formatDateShort(tanggal) : "-";
-  return `${no} - ${tgl} (Stok: ${formatQty(qtySisa)})`;
+function batchGroupKey(refId: string, batch: string, gudangId: string) {
+  return `${refId}::${batch.trim()}::${gudangId}`;
 }
+
+type BatchGroup<T> = {
+  key: string;
+  batchCustomer: string;
+  gudangId: string;
+  satuan: string;
+  qtySisa: number;
+  tanggalTerima: string;
+  lots: T[];
+};
+
+function groupByBatch<
+  T extends {
+    batchCustomer: string;
+    gudangId: string;
+    qtySisa: number;
+    tanggalTerima: string;
+    satuan: string;
+    btbNo: string;
+  },
+>(refId: string, lots: T[]): BatchGroup<T>[] {
+  const grouped = new Map<string, BatchGroup<T>>();
+  const ordered = [...lots].sort(
+    (a, b) =>
+      a.tanggalTerima.localeCompare(b.tanggalTerima) ||
+      a.btbNo.localeCompare(b.btbNo),
+  );
+  for (const lot of ordered) {
+    const key = batchGroupKey(refId, lot.batchCustomer, lot.gudangId);
+    const current = grouped.get(key);
+    if (!current) {
+      grouped.set(key, {
+        key,
+        batchCustomer: lot.batchCustomer,
+        gudangId: lot.gudangId,
+        satuan: lot.satuan,
+        qtySisa: lot.qtySisa,
+        tanggalTerima: lot.tanggalTerima,
+        lots: [lot],
+      });
+      continue;
+    }
+    current.qtySisa += lot.qtySisa;
+    current.lots.push(lot);
+    if (lot.tanggalTerima < current.tanggalTerima) {
+      current.tanggalTerima = lot.tanggalTerima;
+    }
+  }
+  return [...grouped.values()];
+}
+
+function collapseDrafts<
+  T extends {
+    qty: number;
+    batchCustomer: string;
+    gudangId: string;
+    btbTanggalTerima: string;
+  },
+>(lines: T[], refOf: (line: T) => string): (T & { lotKey: string })[] {
+  const order: (T & { lotKey: string })[] = [];
+  const index = new Map<string, number>();
+  for (const line of lines) {
+    const key = batchGroupKey(refOf(line), line.batchCustomer, line.gudangId);
+    const at = index.get(key);
+    if (at === undefined) {
+      index.set(key, order.length);
+      order.push({ ...line, lotKey: key, qty: Number(line.qty) || 0 });
+      continue;
+    }
+    const prev = order[at];
+    order[at] = {
+      ...prev,
+      qty: prev.qty + (Number(line.qty) || 0),
+      btbTanggalTerima:
+        line.btbTanggalTerima &&
+        line.btbTanggalTerima < prev.btbTanggalTerima
+          ? line.btbTanggalTerima
+          : prev.btbTanggalTerima,
+    };
+  }
+  return order;
+}
+
+function expandBatchLines<
+  TLine extends { qty: number; keterangan: string; satuan: string },
+  TLot extends {
+    key: string;
+    btbId: string;
+    btbNo: string;
+    tanggalTerima: string;
+    batchCustomer: string;
+    satuan: string;
+    gudangId: string;
+    qtySisa: number;
+  },
+  TExtra extends object,
+>(
+  lines: TLine[],
+  resolve: (line: TLine) => BatchGroup<TLot> | null,
+  identity: (line: TLine) => TExtra,
+): (TExtra & {
+  btbId: string;
+  btbNo: string;
+  btbTanggalTerima: string;
+  batchCustomer: string;
+  qty: number;
+  satuan: string;
+  gudangId: string;
+  keterangan: string;
+})[] | null {
+  const used = new Map<string, number>();
+  const out: (TExtra & {
+    btbId: string;
+    btbNo: string;
+    btbTanggalTerima: string;
+    batchCustomer: string;
+    qty: number;
+    satuan: string;
+    gudangId: string;
+    keterangan: string;
+  })[] = [];
+  for (const line of lines) {
+    const group = resolve(line);
+    if (!group) return null;
+    let left = Number(line.qty) || 0;
+    let first = true;
+    for (const lot of group.lots) {
+      if (left <= 0) break;
+      const avail = lot.qtySisa - (used.get(lot.key) ?? 0);
+      const take = Math.min(Math.max(avail, 0), left);
+      if (take <= 0) continue;
+      used.set(lot.key, (used.get(lot.key) ?? 0) + take);
+      out.push({
+        ...identity(line),
+        btbId: lot.btbId,
+        btbNo: lot.btbNo,
+        btbTanggalTerima: lot.tanggalTerima,
+        batchCustomer: lot.batchCustomer,
+        qty: take,
+        satuan: lot.satuan || line.satuan,
+        gudangId: lot.gudangId,
+        keterangan: first ? line.keterangan : "",
+      });
+      first = false;
+      left -= take;
+    }
+    if (left > 0) return null;
+  }
+  return out;
+}
+
+type MaterialLotOption = {
+  key: string;
+  btbId: string;
+  btbNo: string;
+  tanggalTerima: string;
+  itemId: string;
+  batchCustomer: string;
+  satuan: string;
+  gudangId: string;
+  qtySisa: number;
+};
+
+type FgLotOption = {
+  key: string;
+  btbId: string;
+  btbNo: string;
+  tanggalTerima: string;
+  fgId: string;
+  batchCustomer: string;
+  satuan: string;
+  gudangId: string;
+  qtySisa: number;
+};
+
+type MaterialDraft = BkbLineItem & { lotKey?: string };
+type FgDraft = BkbLineFg & { lotKey?: string };
 
 export default function BkbFormPage() {
   const params = useParams<{ id: string }>();
@@ -72,6 +257,8 @@ export default function BkbFormPage() {
   const router = useRouter();
   const bkbs = useDataStore((s) => s.bkbs);
   const btbs = useDataStore((s) => s.btbs);
+  const transfers = useDataStore((s) => s.transfers);
+  const adjustments = useDataStore((s) => s.adjustments);
   const items = useDataStore((s) => s.items);
   const finishGoods = useDataStore((s) => s.finishGoods);
   const boms = useDataStore((s) => s.boms);
@@ -101,10 +288,12 @@ export default function BkbFormPage() {
   const [bomMultiplier, setBomMultiplier] = useState(
     existing?.bomMultiplier ?? 1,
   );
-  const [lineItems, setLineItems] = useState<BkbLineItem[]>(
-    existing?.items ?? [],
+  const [lineItems, setLineItems] = useState<MaterialDraft[]>(() =>
+    collapseDrafts(existing?.items ?? [], (line) => line.itemId),
   );
-  const [lineFgs, setLineFgs] = useState<BkbLineFg[]>(existing?.fgs ?? []);
+  const [lineFgs, setLineFgs] = useState<FgDraft[]>(() =>
+    collapseDrafts(existing?.fgs ?? [], (line) => line.fgId),
+  );
   const [fotoBukti, setFotoBukti] = useState<UploadedFile[]>(
     (existing?.fotoBukti ?? []).map((dataUrl, i) => ({
       id: `foto-${i}`,
@@ -160,48 +349,147 @@ export default function BkbFormPage() {
   const displayGudangId =
     lineItems[0]?.gudangId ?? lineFgs[0]?.gudangId ?? gudangAsal;
 
+  /** Sisa per No. BTB di tiap gudang, sudah dikurangi BKB, transfer, dan adjustment disetujui. */
+  const batchStock = useMemo(
+    () =>
+      listBtbBatchStock({
+        btbs,
+        bkbs: existing ? bkbs.filter((doc) => doc.id !== existing.id) : bkbs,
+        transfers,
+        adjustments,
+      }),
+    [adjustments, bkbs, btbs, existing, transfers],
+  );
+
+  const stockForCustomer = useMemo(() => {
+    const grouped = new Map<string, typeof batchStock>();
+    for (const lot of batchStock) {
+      if (lot.qty <= 0) continue;
+      const key = `${lot.jenis}\u0001${lot.refId}`;
+      const list = grouped.get(key) ?? [];
+      list.push(lot);
+      grouped.set(key, list);
+    }
+    const visible: typeof batchStock = [];
+    for (const [key, lots] of grouped) {
+      const separator = key.indexOf("\u0001");
+      const jenis = key.slice(0, separator);
+      const refId = key.slice(separator + 1);
+      const customerId =
+        jenis === "item"
+          ? (findItem(refId, items)?.customerId ?? "")
+          : (findFinishGood(refId, finishGoods)?.customerId ?? "");
+      visible.push(...lotsForCustomer(lots, customerId));
+    }
+    return visible;
+  }, [batchStock, finishGoods, items]);
+
   const sources: BtbSourceOption[] = useMemo(() => {
     const opts: BtbSourceOption[] = [];
-    for (const btb of btbs) {
-      btb.items.forEach((line, idx) => {
-        if (line.qtySisa <= 0) return;
-        if (gudangAsal && line.gudangId !== gudangAsal) return;
-        const item = findItem(line.itemId, items);
-        opts.push({
-          key: `${btb.id}-item-${idx}`,
-          btbId: btb.id,
-          btbNo: btb.no,
-          tanggalTerima: btb.tanggalTerima,
-          jenis: "item",
-          refId: line.itemId,
-          label: `${btb.no} · ${item ? formatKodeNama(item.kode, item.nama) : "Material"} (sisa ${line.qtySisa})`,
-          batchCustomer: line.batchCustomer,
-          satuan: line.satuan,
-          gudangId: line.gudangId,
-          qtySisa: line.qtySisa,
-        });
-      });
-      btb.fgs.forEach((line, idx) => {
-        if (line.qtySisa <= 0) return;
-        if (gudangAsal && line.gudangId !== gudangAsal) return;
-        const fg = findFinishGood(line.fgId, finishGoods);
-        opts.push({
-          key: `${btb.id}-fg-${idx}`,
-          btbId: btb.id,
-          btbNo: btb.no,
-          tanggalTerima: btb.tanggalTerima,
-          jenis: "fg",
-          refId: line.fgId,
-          label: `${btb.no} · ${fg ? formatKodeNama(fg.kode, fg.nama) : "FG"} (sisa ${line.qtySisa})`,
-          batchCustomer: line.batchCustomer,
-          satuan: line.satuan,
-          gudangId: line.gudangId,
-          qtySisa: line.qtySisa,
-        });
+    for (const lot of stockForCustomer) {
+      if (lot.qty <= 0) continue;
+      if (gudangAsal && lot.gudangId !== gudangAsal) continue;
+      const btb = btbs.find((doc) => doc.id === lot.btbId);
+      const master =
+        lot.jenis === "item"
+          ? findItem(lot.refId, items)
+          : findFinishGood(lot.refId, finishGoods);
+      const satuan =
+        lot.jenis === "item"
+          ? (btb?.items.find((line) => line.itemId === lot.refId)?.satuan ||
+            master?.uom1 ||
+            "")
+          : (btb?.fgs.find((line) => line.fgId === lot.refId)?.satuan ||
+            master?.uom1 ||
+            "");
+      opts.push({
+        key: lot.key,
+        btbId: lot.btbId,
+        btbNo: lot.btbNo,
+        tanggalTerima: lot.tanggal,
+        jenis: lot.jenis,
+        refId: lot.refId,
+        label: `${lot.btbNo} · ${master ? formatKodeNama(master.kode, master.nama) : lot.jenis === "item" ? "Material" : "FG"} (sisa ${lot.qty})`,
+        batchCustomer: lot.batchCustomer,
+        satuan,
+        gudangId: lot.gudangId,
+        qtySisa: lot.qty,
       });
     }
     return opts;
-  }, [btbs, finishGoods, gudangAsal, items]);
+  }, [btbs, finishGoods, gudangAsal, items, stockForCustomer]);
+
+  /** Lot penerimaan yang masih punya stok, sebelum digabung per nama batch. */
+  const materialLots = useMemo(() => {
+    const lots: MaterialLotOption[] = [];
+    for (const lot of stockForCustomer) {
+      if (lot.jenis !== "item" || lot.qty <= 0) continue;
+      const line = btbs
+        .find((doc) => doc.id === lot.btbId)
+        ?.items.find((row) => row.itemId === lot.refId);
+      lots.push({
+        key: lot.key,
+        btbId: lot.btbId,
+        btbNo: lot.btbNo,
+        tanggalTerima: lot.tanggal,
+        itemId: lot.refId,
+        batchCustomer: lot.batchCustomer,
+        satuan: line?.satuan || findItem(lot.refId, items)?.uom1 || "",
+        gudangId: lot.gudangId,
+        qtySisa: lot.qty,
+      });
+    }
+    return lots;
+  }, [btbs, items, stockForCustomer]);
+
+  const fgLots = useMemo(() => {
+    const lots: FgLotOption[] = [];
+    for (const lot of stockForCustomer) {
+      if (lot.jenis !== "fg" || lot.qty <= 0) continue;
+      const line = btbs
+        .find((doc) => doc.id === lot.btbId)
+        ?.fgs.find((row) => row.fgId === lot.refId);
+      lots.push({
+        key: lot.key,
+        btbId: lot.btbId,
+        btbNo: lot.btbNo,
+        tanggalTerima: lot.tanggal,
+        fgId: lot.refId,
+        batchCustomer: lot.batchCustomer,
+        satuan: line?.satuan || findFinishGood(lot.refId, finishGoods)?.uom1 || "",
+        gudangId: lot.gudangId,
+        qtySisa: lot.qty,
+      });
+    }
+    return lots;
+  }, [btbs, finishGoods, stockForCustomer]);
+
+  const materialGroups = useMemo(() => {
+    const byItem = new Map<string, MaterialLotOption[]>();
+    for (const lot of materialLots) {
+      const list = byItem.get(lot.itemId) ?? [];
+      list.push(lot);
+      byItem.set(lot.itemId, list);
+    }
+    return new Map(
+      [...byItem.entries()].map(([itemId, lots]) => [
+        itemId,
+        groupByBatch(itemId, lots),
+      ]),
+    );
+  }, [materialLots]);
+
+  const fgGroups = useMemo(() => {
+    const byFg = new Map<string, FgLotOption[]>();
+    for (const lot of fgLots) {
+      const list = byFg.get(lot.fgId) ?? [];
+      list.push(lot);
+      byFg.set(lot.fgId, list);
+    }
+    return new Map(
+      [...byFg.entries()].map(([fgId, lots]) => [fgId, groupByBatch(fgId, lots)]),
+    );
+  }, [fgLots]);
 
   function allocateFromSources(
     jenis: "item" | "fg",
@@ -269,11 +557,9 @@ export default function BkbFormPage() {
       newFgs.push(...allocated);
     }
 
-    setLineItems(newItems);
-    setLineFgs(newFgs);
-    toast.success(
-      `BOM diterapkan ×${bomMultiplier}. Multi-BTB otomatis jika stok kurang.`,
-    );
+    setLineItems(collapseDrafts(newItems, (line) => line.itemId));
+    setLineFgs(collapseDrafts(newFgs, (line) => line.fgId));
+    toast.success(`BOM diterapkan ×${bomMultiplier}.`);
   }
 
   function addManualItem() {
@@ -286,6 +572,7 @@ export default function BkbFormPage() {
       ...lineItems,
       {
         itemId: src.refId,
+        lotKey: batchGroupKey(src.refId, src.batchCustomer, src.gudangId),
         btbId: src.btbId,
         btbNo: src.btbNo,
         btbTanggalTerima: src.tanggalTerima,
@@ -308,6 +595,7 @@ export default function BkbFormPage() {
       ...lineFgs,
       {
         fgId: src.refId,
+        lotKey: batchGroupKey(src.refId, src.batchCustomer, src.gudangId),
         btbId: src.btbId,
         btbNo: src.btbNo,
         btbTanggalTerima: src.tanggalTerima,
@@ -329,8 +617,8 @@ export default function BkbFormPage() {
     setKeterangan(existing.keterangan ?? "");
     setBomId(existing.bomId ?? "");
     setBomMultiplier(existing.bomMultiplier ?? 1);
-    setLineItems(existing.items);
-    setLineFgs(existing.fgs);
+    setLineItems(collapseDrafts(existing.items, (line) => line.itemId));
+    setLineFgs(collapseDrafts(existing.fgs, (line) => line.fgId));
     setFotoBukti(
       (existing.fotoBukti ?? []).map((dataUrl, i) => ({
         id: `foto-${i}`,
@@ -347,64 +635,107 @@ export default function BkbFormPage() {
     setEditing(false);
   }
 
-  function materialLot(line: Pick<BkbLineItem, "btbId" | "itemId" | "gudangId" | "batchCustomer">) {
-    if (!line.btbId || !line.itemId) return null;
-    const btb = btbs.find((doc) => doc.id === line.btbId);
-    if (!btb) return null;
-    const rows = btb.items.filter((row) => row.itemId === line.itemId);
-    const inGudang = line.gudangId
-      ? rows.filter((row) => row.gudangId === line.gudangId)
-      : rows;
-    const pool = inGudang.length > 0 ? inGudang : rows;
-    if (line.batchCustomer) {
-      const exact = pool.find((row) => row.batchCustomer === line.batchCustomer);
-      if (exact) return exact;
+  function groupsForItem(itemId: string) {
+    return materialGroups.get(itemId) ?? [];
+  }
+
+  function groupsForFg(fgId: string) {
+    return fgGroups.get(fgId) ?? [];
+  }
+
+  function resolveMaterialGroup(line: MaterialDraft) {
+    const groups = groupsForItem(line.itemId);
+    if (line.lotKey) {
+      const byKey = groups.find((group) => group.key === line.lotKey);
+      if (byKey) return byKey;
     }
-    return pool[0] ?? null;
+    return (
+      groups.find(
+        (group) =>
+          group.batchCustomer === line.batchCustomer &&
+          group.gudangId === line.gudangId,
+      ) ?? null
+    );
   }
 
-  /** Sisa stok aktual lot BTB di state, sebelum qty form yang belum disimpan. */
-  function materialLotStock(line: BkbLineItem) {
-    return materialLot(line)?.qtySisa ?? null;
+  function resolveFgGroup(line: FgDraft) {
+    const groups = groupsForFg(line.fgId);
+    if (line.lotKey) {
+      const byKey = groups.find((group) => group.key === line.lotKey);
+      if (byKey) return byKey;
+    }
+    return (
+      groups.find(
+        (group) =>
+          group.batchCustomer === line.batchCustomer &&
+          group.gudangId === line.gudangId,
+      ) ?? null
+    );
   }
 
-  /**
-   * Batas qty baris ini: stok lot, ditambah qty yang dokumen ini sudah potong
-   * saat edit, dikurangi qty baris lain pada form untuk lot yang sama.
-   */
+  function batchOptionLabel<
+    T extends {
+      batchCustomer: string;
+      gudangId: string;
+      qtySisa: number;
+      lots: { btbNo: string }[];
+    },
+  >(group: T, groups: T[]) {
+    const name = group.batchCustomer.trim();
+    const sharedName =
+      groups.filter((row) => row.batchCustomer.trim() === name).length > 1;
+    const btbNo = [
+      ...new Set(group.lots.map((lot) => lot.btbNo.trim()).filter(Boolean)),
+    ].join(", ");
+    return formatBatchStockLabel(
+      btbNo,
+      group.batchCustomer,
+      group.qtySisa,
+      sharedName ? gudangMap[group.gudangId]?.nama : undefined,
+    );
+  }
+
+  function groupMaxQty(
+    idx: number,
+    stock: number,
+    lines: { qty: number }[],
+    sameGroup: (index: number) => boolean,
+  ) {
+    const reserved = lines.reduce((sum, _line, otherIdx) => {
+      if (otherIdx === idx || !sameGroup(otherIdx)) return sum;
+      return sum + (Number(lines[otherIdx].qty) || 0);
+    }, 0);
+    return Math.max(0, stock - reserved);
+  }
+
   function materialMaxQty(idx: number) {
     const line = lineItems[idx];
     if (!line) return null;
-    const stock = materialLotStock(line);
-    if (stock === null) return null;
-    const lot = materialLot(line);
-    let allowed = stock;
-    if (existing && lot) {
-      allowed += existing.items
-        .filter(
-          (saved) =>
-            saved.btbId === line.btbId &&
-            saved.itemId === line.itemId &&
-            saved.gudangId === lot.gudangId &&
-            saved.batchCustomer === lot.batchCustomer,
-        )
-        .reduce((sum, saved) => sum + saved.qty, 0);
-    }
-    const reserved = lineItems.reduce((sum, other, otherIdx) => {
-      if (otherIdx === idx) return sum;
-      if (other.btbId !== line.btbId || other.itemId !== line.itemId) return sum;
-      const otherLot = materialLot(other);
-      if (
-        lot &&
-        otherLot &&
-        (otherLot.gudangId !== lot.gudangId ||
-          otherLot.batchCustomer !== lot.batchCustomer)
-      ) {
-        return sum;
-      }
-      return sum + (Number(other.qty) || 0);
-    }, 0);
-    return Math.max(0, allowed - reserved);
+    const group = resolveMaterialGroup(line);
+    if (!group) return null;
+    return groupMaxQty(
+      idx,
+      group.qtySisa,
+      lineItems,
+      (otherIdx) => resolveMaterialGroup(lineItems[otherIdx])?.key === group.key,
+    );
+  }
+
+  function fgMaxQty(idx: number) {
+    const line = lineFgs[idx];
+    if (!line) return null;
+    const group = resolveFgGroup(line);
+    if (!group) return null;
+    return groupMaxQty(
+      idx,
+      group.qtySisa,
+      lineFgs,
+      (otherIdx) => resolveFgGroup(lineFgs[otherIdx])?.key === group.key,
+    );
+  }
+
+  function qtyPositive(qty: number) {
+    return Number(qty) > 0;
   }
 
   function materialQtyOver(idx: number) {
@@ -413,41 +744,51 @@ export default function BkbFormPage() {
     return lineItems[idx].qty > maxQty;
   }
 
+  function fgQtyOver(idx: number) {
+    const maxQty = fgMaxQty(idx);
+    if (maxQty === null) return false;
+    return lineFgs[idx].qty > maxQty;
+  }
+
   function save() {
+    if (
+      lineItems.some((line) => !qtyPositive(line.qty)) ||
+      lineFgs.some((line) => !qtyPositive(line.qty))
+    ) {
+      toast.error("Qty harus lebih besar dari 0");
+      return;
+    }
+    if (lineItems.some((line) => !resolveMaterialGroup(line))) {
+      toast.error("Setiap baris Material wajib memilih batch yang masih ada stoknya");
+      return;
+    }
+    if (lineFgs.some((line) => !resolveFgGroup(line))) {
+      toast.error("Setiap baris FG wajib memilih batch yang masih ada stoknya");
+      return;
+    }
     if (lineItems.some((_, idx) => materialQtyOver(idx))) {
-      toast.error("Qty material melebihi stok BTB yang tersedia");
+      toast.error("Qty material melebihi stok batch yang tersedia");
+      return;
+    }
+    if (lineFgs.some((_, idx) => fgQtyOver(idx))) {
+      toast.error("Qty FG melebihi stok batch yang tersedia");
       return;
     }
     if (lineItems.length === 0 && lineFgs.length === 0) {
       toast.error("Minimal satu baris pengeluaran");
       return;
     }
-    for (const line of lineItems) {
-      if (!line.btbId) {
-        toast.error("Setiap baris Material wajib punya No. BTB");
-        return;
-      }
-    }
-    for (const line of lineFgs) {
-      if (!line.btbId) {
-        toast.error("Setiap baris FG wajib punya No. BTB");
-        return;
-      }
-    }
 
-    // Deduct qtySisa from BTB (mock)
-    const nextBtbs = structuredClone(btbs);
-    for (const line of lineItems) {
-      const btb = nextBtbs.find((b) => b.id === line.btbId);
-      const src = btb?.items.find((i) => i.itemId === line.itemId);
-      if (src) src.qtySisa = Math.max(0, src.qtySisa - line.qty);
+    const stampedItems = expandBatchLines(lineItems, resolveMaterialGroup, (line) => ({
+      itemId: line.itemId,
+    }));
+    const stampedFgs = expandBatchLines(lineFgs, resolveFgGroup, (line) => ({
+      fgId: line.fgId,
+    }));
+    if (!stampedItems || !stampedFgs) {
+      toast.error("Qty melebihi stok batch yang tersedia");
+      return;
     }
-    for (const line of lineFgs) {
-      const btb = nextBtbs.find((b) => b.id === line.btbId);
-      const src = btb?.fgs.find((i) => i.fgId === line.fgId);
-      if (src) src.qtySisa = Math.max(0, src.qtySisa - line.qty);
-    }
-    nextBtbs.forEach(upsertBtb);
 
     const payload: Bkb = {
       id: existing?.id ?? uid("bkb"),
@@ -459,11 +800,15 @@ export default function BkbFormPage() {
       keterangan,
       bomId: bomId || undefined,
       bomMultiplier: bomId ? bomMultiplier : undefined,
-      items: lineItems,
-      fgs: lineFgs,
+      items: stampedItems,
+      fgs: stampedFgs,
       fotoBukti: fotoBukti.map((f) => f.dataUrl),
       createdAt: existing?.createdAt ?? new Date().toISOString(),
     };
+    const nextBkbs = bkbs.some((doc) => doc.id === payload.id)
+      ? bkbs.map((doc) => (doc.id === payload.id ? payload : doc))
+      : [payload, ...bkbs];
+    syncBtbQtySisa(btbs, nextBkbs).forEach(upsertBtb);
     upsertBkb(payload);
     addLog({
       waktu: new Date().toISOString(),
@@ -481,9 +826,11 @@ export default function BkbFormPage() {
     }
   }
 
-  const itemSources = sources.filter((s) => s.jenis === "item");
-  const fgSources = sources.filter((s) => s.jenis === "fg");
-  const materialQtyInvalid = lineItems.some((_, idx) => materialQtyOver(idx));
+  const materialQtyInvalid =
+    lineItems.some(
+      (line, idx) => !qtyPositive(line.qty) || materialQtyOver(idx),
+    ) ||
+    lineFgs.some((line, idx) => !qtyPositive(line.qty) || fgQtyOver(idx));
 
   if (notFound) {
     return (
@@ -511,7 +858,7 @@ export default function BkbFormPage() {
       <BackLink href="/transaksi/bkb" />
       <PageHeader
         title={isNew ? "Buat BKB" : (existing?.no ?? "BKB")}
-        description="Catat barang yang keluar dari gudang asal. Setiap baris harus memilih nomor BTB sumber agar sisa stok terhitung benar."
+        description="Catat barang yang keluar dari gudang asal. Setiap baris memilih batch sumber, dan qty dibatasi oleh sisa stok batch itu."
         action={
           !isNew && existing ? (
             <div className="flex flex-wrap gap-2">
@@ -602,22 +949,14 @@ export default function BkbFormPage() {
             </div>
             <div className="space-y-2">
               <Label>Gudang Asal</Label>
-              <Select
-                value={gudangAsal}
-                onValueChange={(v) => setGudangAsal(v ?? "")}
+              <SearchableCombobox
                 items={gudangSelectItems}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih gudang" />
-                </SelectTrigger>
-                <SelectContent>
-                  {gudangList.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>
-                      {g.nama}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                value={gudangAsal}
+                onValueChange={(next) => setGudangAsal(next ?? "")}
+                placeholder="Cari gudang..."
+                emptyText="Tidak ada gudang yang cocok"
+                itemNoun="gudang"
+              />
             </div>
             <div className="space-y-2">
               <Label>Jenis Transaksi</Label>
@@ -668,33 +1007,16 @@ export default function BkbFormPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-end">
             <div className="min-w-0 w-full flex-1 space-y-2 sm:min-w-[300px]">
-              <Label htmlFor="bkb-bom-kode">Kode BOM</Label>
-              <Select
-                value={bomId}
-                onValueChange={(v) => setBomId(v ?? "")}
+              <Label>Kode BOM</Label>
+              <SearchableCombobox
                 items={bomSelectItems}
-              >
-                <SelectTrigger
-                  id="bkb-bom-kode"
-                  className="h-8 w-full min-w-[300px] bg-white"
-                >
-                  <SelectValue placeholder="Pilih BOM">
-                    {(() => {
-                      const bom = boms.find((b) => b.id === bomId);
-                      if (!bom) return undefined;
-                      return `${bom.kode} - ${fgMap[bom.fgId]?.nama ?? (bom.keterangan || "BOM")}`;
-                    })()}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,36rem)]">
-                  {boms.map((b) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.kode} -{" "}
-                      {fgMap[b.fgId]?.nama ?? (b.keterangan || "BOM")}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                value={bomId}
+                onValueChange={(next) => setBomId(next ?? "")}
+                placeholder="Cari kode BOM..."
+                emptyText="Tidak ada BOM yang cocok"
+                itemNoun="BOM"
+                className="bg-white"
+              />
             </div>
             <div className="w-full shrink-0 space-y-2 sm:w-32">
               <Label htmlFor="bkb-bom-multiplier">Kalikan Qty</Label>
@@ -756,22 +1078,7 @@ export default function BkbFormPage() {
                     );
                   })()}
                 />
-                <DetailField
-                  label="BTB Sumber"
-                  value={
-                    line.btbId ? (
-                      <DocLink href={`/transaksi/btb/${line.btbId}`}>
-                        {formatBtbSumberLabel(
-                          line.btbNo || line.btbId,
-                          line.btbTanggalTerima,
-                        )}
-                      </DocLink>
-                    ) : (
-                      formatBtbSumberLabel(line.btbNo, line.btbTanggalTerima)
-                    )
-                  }
-                />
-                <DetailField label="Batch" value={line.batchCustomer} />
+                <DetailField label="Batch" value={line.batchCustomer || "-"} />
                 <DetailField
                   label="Qty"
                   value={formatQty(line.qty, line.satuan)}
@@ -793,110 +1100,76 @@ export default function BkbFormPage() {
               >
                 <div className="lg:col-span-2">
                   <Label className="text-xs">Nama Material</Label>
-                  <Select
-                    value={line.itemId}
+                  <SearchableCombobox
                     items={itemSelectItems}
-                    onValueChange={(v) => {
-                      const vv = v ?? "";
-                      const item = findItem(vv, items);
-                      const src = itemSources.find((s) => s.refId === vv);
-                      const next = [...lineItems];
-                      next[idx] = {
+                    value={line.itemId}
+                    onValueChange={(next) => {
+                      const itemId = next ?? "";
+                      const item = findItem(itemId, items);
+                      const groups = groupsForItem(itemId);
+                      const src =
+                        groups.find((group) => group.gudangId === gudangAsal) ??
+                        groups[0];
+                      const nextLines = [...lineItems];
+                      nextLines[idx] = {
                         ...line,
-                        itemId: vv,
-                        btbId: src?.btbId ?? "",
-                        btbNo: src?.btbNo ?? "",
+                        itemId,
+                        lotKey: src?.key,
+                        btbId: src?.lots[0]?.btbId ?? "",
+                        btbNo: src?.lots[0]?.btbNo ?? "",
                         btbTanggalTerima: src?.tanggalTerima ?? "",
-                        batchCustomer:
-                          src?.batchCustomer ?? item?.batchCustomer ?? "",
+                        batchCustomer: src?.batchCustomer ?? "",
                         satuan: src?.satuan ?? item?.uom1 ?? "",
                         gudangId: src?.gudangId ?? gudangAsal,
                       };
-                      setLineItems(next);
+                      setLineItems(nextLines);
                     }}
-                  >
-                    <SelectTrigger className="h-8 w-full min-w-0 gap-1.5 overflow-hidden py-0 pr-2 pl-2.5 [&_[data-slot=select-value]]:flex! [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:flex-nowrap [&_[data-slot=select-value]]:items-center [&_[data-slot=select-value]]:gap-1.5 [&_[data-slot=select-value]]:overflow-hidden [&_[data-slot=select-value]]:[-webkit-line-clamp:unset] [&_[data-slot=select-value]]:[-webkit-box-orient:horizontal]">
-                      <SelectValue placeholder="Pilih material">
-                        {(() => {
-                          const item = findItem(line.itemId, items);
-                          return item ? (
-                            <>
-                              <span className="min-w-0 flex-1 truncate">
-                                {formatKodeNama(item.kode, item.nama)}
-                              </span>
-                              <ItemTypeBadge jenis="item" />
-                            </>
-                          ) : undefined;
-                        })()}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {items.map((i) => (
-                        <SelectItem key={i.id} value={i.id}>
-                          <ItemNameWithType jenis="item" className="flex-nowrap">
-                            {i.kode} - {i.nama}
-                          </ItemNameWithType>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    renderItem={(item) => (
+                      <ItemNameWithType jenis="item" className="w-full">
+                        {item.label}
+                      </ItemNameWithType>
+                    )}
+                    endAdornment={
+                      line.itemId ? <ItemTypeBadge jenis="item" /> : null
+                    }
+                    placeholder="Cari material..."
+                    emptyText="Tidak ada material yang cocok"
+                    itemNoun="material"
+                  />
                 </div>
                 <div className="min-w-0 lg:col-span-3">
-                  <Label className="text-xs">BTB Sumber</Label>
-                  <Select
-                    value={line.btbId}
-                    items={itemSources
-                      .filter((s) => s.refId === line.itemId)
-                      .map((s) => ({
-                        value: s.btbId,
-                        label: formatBtbStockLabel(
-                          s.btbNo,
-                          s.tanggalTerima,
-                          s.qtySisa,
-                        ),
-                      }))}
-                    onValueChange={(v) => {
-                      const vv = v ?? "";
-                      const src = itemSources.find(
-                        (s) => s.btbId === vv && s.refId === line.itemId,
+                  <Label className="text-xs">Batch</Label>
+                  <SearchableCombobox
+                    items={groupsForItem(line.itemId).map((group) => ({
+                      value: group.key,
+                      label: batchOptionLabel(
+                        group,
+                        groupsForItem(line.itemId),
+                      ),
+                    }))}
+                    value={resolveMaterialGroup(line)?.key ?? ""}
+                    onValueChange={(next) => {
+                      const group = groupsForItem(line.itemId).find(
+                        (row) => row.key === next,
                       );
-                      const next = [...lineItems];
-                      next[idx] = {
+                      if (!group) return;
+                      const nextLines = [...lineItems];
+                      nextLines[idx] = {
                         ...line,
-                        btbId: vv,
-                        btbNo: src?.btbNo ?? "",
-                        btbTanggalTerima: src?.tanggalTerima ?? "",
-                        batchCustomer: src?.batchCustomer ?? line.batchCustomer,
-                        gudangId: src?.gudangId ?? line.gudangId,
+                        lotKey: group.key,
+                        btbId: group.lots[0]?.btbId ?? "",
+                        btbNo: group.lots[0]?.btbNo ?? "",
+                        btbTanggalTerima: group.tanggalTerima,
+                        batchCustomer: group.batchCustomer,
+                        satuan: group.satuan,
+                        gudangId: group.gudangId,
                       };
-                      setLineItems(next);
+                      setLineItems(nextLines);
                     }}
-                  >
-                    <SelectTrigger className="w-full min-w-[12rem]">
-                      <SelectValue placeholder="Pilih No. BTB">
-                        {line.btbId
-                          ? formatBtbStockLabel(
-                              line.btbNo,
-                              line.btbTanggalTerima,
-                              materialLotStock(line) ?? 0,
-                            )
-                          : undefined}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,40rem)]">
-                      {itemSources
-                        .filter((s) => s.refId === line.itemId)
-                        .map((s) => (
-                          <SelectItem key={s.key} value={s.btbId}>
-                            {formatBtbStockLabel(
-                              s.btbNo,
-                              s.tanggalTerima,
-                              s.qtySisa,
-                            )}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Masukkan batch..."
+                    emptyText="Tidak ada batch untuk customer ini"
+                    itemNoun="batch"
+                  />
                 </div>
                 <div>
                   <Label className="text-xs">Qty</Label>
@@ -905,7 +1178,9 @@ export default function BkbFormPage() {
                     min={0}
                     max={materialMaxQty(idx) ?? undefined}
                     value={line.qty}
-                    aria-invalid={materialQtyOver(idx) || undefined}
+                    aria-invalid={
+                      !qtyPositive(line.qty) || materialQtyOver(idx) || undefined
+                    }
                     onChange={(e) => {
                       const next = [...lineItems];
                       next[idx] = { ...line, qty: Number(e.target.value) || 0 };
@@ -938,7 +1213,11 @@ export default function BkbFormPage() {
                     <Trash2 className="size-4" />
                   </Button>
                 </div>
-                {materialQtyOver(idx) ? (
+                {!qtyPositive(line.qty) ? (
+                  <p className="text-xs text-destructive lg:col-span-8">
+                    Qty harus lebih besar dari 0
+                  </p>
+                ) : materialQtyOver(idx) ? (
                   <p className="text-xs text-destructive lg:col-span-8">
                     Qty melebihi stok BTB yang tersedia (Maks:{" "}
                     {formatQty(materialMaxQty(idx) ?? 0)})
@@ -982,22 +1261,7 @@ export default function BkbFormPage() {
                     );
                   })()}
                 />
-                <DetailField
-                  label="BTB Sumber"
-                  value={
-                    line.btbId ? (
-                      <DocLink href={`/transaksi/btb/${line.btbId}`}>
-                        {formatBtbSumberLabel(
-                          line.btbNo || line.btbId,
-                          line.btbTanggalTerima,
-                        )}
-                      </DocLink>
-                    ) : (
-                      formatBtbSumberLabel(line.btbNo, line.btbTanggalTerima)
-                    )
-                  }
-                />
-                <DetailField label="Batch" value={line.batchCustomer} />
+                <DetailField label="Batch" value={line.batchCustomer || "-"} />
                 <DetailField
                   label="Qty"
                   value={formatQty(line.qty, line.satuan)}
@@ -1019,102 +1283,84 @@ export default function BkbFormPage() {
               >
                 <div className="lg:col-span-2">
                   <Label className="text-xs">Nama Finish Good</Label>
-                  <Select
-                    value={line.fgId}
+                  <SearchableCombobox
                     items={fgSelectItems}
-                    onValueChange={(v) => {
-                      const vv = v ?? "";
-                      const fg = findFinishGood(vv, finishGoods);
-                      const src = fgSources.find((s) => s.refId === vv);
-                      const next = [...lineFgs];
-                      next[idx] = {
+                    value={line.fgId}
+                    onValueChange={(next) => {
+                      const fgId = next ?? "";
+                      const fg = findFinishGood(fgId, finishGoods);
+                      const groups = groupsForFg(fgId);
+                      const src =
+                        groups.find((group) => group.gudangId === gudangAsal) ??
+                        groups[0];
+                      const nextLines = [...lineFgs];
+                      nextLines[idx] = {
                         ...line,
-                        fgId: vv,
-                        btbId: src?.btbId ?? "",
-                        btbNo: src?.btbNo ?? "",
+                        fgId,
+                        lotKey: src?.key,
+                        btbId: src?.lots[0]?.btbId ?? "",
+                        btbNo: src?.lots[0]?.btbNo ?? "",
                         btbTanggalTerima: src?.tanggalTerima ?? "",
-                        batchCustomer:
-                          src?.batchCustomer ?? fg?.batchCustomer ?? "",
+                        batchCustomer: src?.batchCustomer ?? "",
                         satuan: src?.satuan ?? fg?.uom1 ?? "",
                         gudangId: src?.gudangId ?? gudangAsal,
                       };
-                      setLineFgs(next);
+                      setLineFgs(nextLines);
                     }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Pilih FG">
-                        {(() => {
-                          const fg = findFinishGood(line.fgId, finishGoods);
-                          return fg ? (
-                            <ItemNameWithType jenis="fg">
-                              {formatKodeNama(fg.kode, fg.nama)}
-                            </ItemNameWithType>
-                          ) : undefined;
-                        })()}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {finishGoods.map((f) => (
-                        <SelectItem key={f.id} value={f.id}>
-                          <ItemNameWithType jenis="fg">
-                            {f.kode} - {f.nama}
-                          </ItemNameWithType>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    renderItem={(item) => (
+                      <ItemNameWithType jenis="fg" className="w-full">
+                        {item.label}
+                      </ItemNameWithType>
+                    )}
+                    endAdornment={
+                      line.fgId ? <ItemTypeBadge jenis="fg" /> : null
+                    }
+                    placeholder="Cari finish good..."
+                    emptyText="Tidak ada finish good yang cocok"
+                    itemNoun="finish good"
+                  />
                 </div>
                 <div className="min-w-0 lg:col-span-3">
-                  <Label className="text-xs">BTB Sumber</Label>
-                  <Select
-                    value={line.btbId}
-                    items={fgSources
-                      .filter((s) => s.refId === line.fgId)
-                      .map((s) => ({
-                        value: s.btbId,
-                        label: formatBtbSumberLabel(s.btbNo, s.tanggalTerima),
-                      }))}
-                    onValueChange={(v) => {
-                      const vv = v ?? "";
-                      const src = fgSources.find(
-                        (s) => s.btbId === vv && s.refId === line.fgId,
+                  <Label className="text-xs">Batch</Label>
+                  <SearchableCombobox
+                    items={groupsForFg(line.fgId).map((group) => ({
+                      value: group.key,
+                      label: batchOptionLabel(group, groupsForFg(line.fgId)),
+                    }))}
+                    value={resolveFgGroup(line)?.key ?? ""}
+                    onValueChange={(next) => {
+                      const group = groupsForFg(line.fgId).find(
+                        (row) => row.key === next,
                       );
-                      const next = [...lineFgs];
-                      next[idx] = {
+                      if (!group) return;
+                      const nextLines = [...lineFgs];
+                      nextLines[idx] = {
                         ...line,
-                        btbId: vv,
-                        btbNo: src?.btbNo ?? "",
-                        btbTanggalTerima: src?.tanggalTerima ?? "",
+                        lotKey: group.key,
+                        btbId: group.lots[0]?.btbId ?? "",
+                        btbNo: group.lots[0]?.btbNo ?? "",
+                        btbTanggalTerima: group.tanggalTerima,
+                        batchCustomer: group.batchCustomer,
+                        satuan: group.satuan,
+                        gudangId: group.gudangId,
                       };
-                      setLineFgs(next);
+                      setLineFgs(nextLines);
                     }}
-                  >
-                    <SelectTrigger className="w-full min-w-[12rem]">
-                      <SelectValue placeholder="Pilih No. BTB">
-                        {line.btbId
-                          ? formatBtbSumberLabel(
-                              line.btbNo,
-                              line.btbTanggalTerima,
-                            )
-                          : undefined}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,28rem)]">
-                      {fgSources
-                        .filter((s) => s.refId === line.fgId)
-                        .map((s) => (
-                          <SelectItem key={s.key} value={s.btbId}>
-                            {formatBtbSumberLabel(s.btbNo, s.tanggalTerima)}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Masukkan batch..."
+                    emptyText="Tidak ada batch untuk customer ini"
+                    itemNoun="batch"
+                  />
                 </div>
                 <div>
                   <Label className="text-xs">Qty</Label>
                   <Input
                     type="number"
+                    min={0}
+                    max={fgMaxQty(idx) ?? undefined}
                     value={line.qty}
+                    aria-invalid={
+                      !qtyPositive(line.qty) || fgQtyOver(idx) || undefined
+                    }
                     onChange={(e) => {
                       const next = [...lineFgs];
                       next[idx] = { ...line, qty: Number(e.target.value) || 0 };
@@ -1147,6 +1393,16 @@ export default function BkbFormPage() {
                     <Trash2 className="size-4" />
                   </Button>
                 </div>
+                {!qtyPositive(line.qty) ? (
+                  <p className="text-xs text-destructive lg:col-span-8">
+                    Qty harus lebih besar dari 0
+                  </p>
+                ) : fgQtyOver(idx) ? (
+                  <p className="text-xs text-destructive lg:col-span-8">
+                    Qty melebihi stok BTB yang tersedia (Maks:{" "}
+                    {formatQty(fgMaxQty(idx) ?? 0)})
+                  </p>
+                ) : null}
               </div>
             ),
           )}

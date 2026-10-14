@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { CustomerFilterCombobox } from "@/components/shared/customer-filter-combobox";
-import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
+import { SearchableCombobox } from "@/components/ui/combobox";
+import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
 import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader, StatusBadge } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -184,36 +185,33 @@ export default function ItemPage() {
       />
 
       <div className="mb-4 flex flex-col gap-2 sm:flex-row">
-        <Select
-          value={filterItem}
-          onValueChange={(v) => setFilterItem(v ?? "all")}
-          items={itemFilterItems}
-        >
-          <SelectTrigger className="w-full max-w-sm bg-white">
-            <SelectValue placeholder="Pilih Material...">
-              {(value: string | null) => {
-                if (!value || value === "all") return "Semua Material";
-                const item = items.find((row) => row.id === value);
-                if (!item) return null;
-                return (
-                  <ItemNameWithType jenis="item">
-                    {item.kode} - {item.nama}
-                  </ItemNameWithType>
-                );
-              }}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Material</SelectItem>
-            {items.map((i) => (
-              <SelectItem key={i.id} value={i.id}>
-                <ItemNameWithType jenis="item">
-                  {i.kode} - {i.nama}
+        <div className="w-full min-w-0 max-w-sm">
+          <SearchableCombobox
+            items={itemFilterItems}
+            value={filterItem}
+            onValueChange={(next) => setFilterItem(next || "all")}
+            filterItem={(item, query) =>
+              item.value === "all" ||
+              item.label.toLowerCase().includes(query.toLowerCase())
+            }
+            renderItem={(item) =>
+              item.value === "all" ? (
+                <span className="block truncate">{item.label}</span>
+              ) : (
+                <ItemNameWithType jenis="item" className="w-full">
+                  {item.label}
                 </ItemNameWithType>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+              )
+            }
+            endAdornment={
+              filterItem !== "all" ? <ItemTypeBadge jenis="item" /> : null
+            }
+            placeholder="Cari kode atau nama material..."
+            emptyText="Tidak ada material yang cocok"
+            itemNoun="material"
+            className="bg-white"
+          />
+        </div>
         <CustomerFilterCombobox
           customers={customers}
           value={filterCust}
@@ -323,7 +321,7 @@ export default function ItemPage() {
           <DialogHeader>
             <DialogTitle>Tambah Material</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Kode Material</Label>
               <Input
@@ -338,46 +336,51 @@ export default function ItemPage() {
                 onChange={(e) => setForm({ ...form, nama: e.target.value })}
               />
             </div>
-            <div className="space-y-2">
-              <Label>Customer</Label>
-              <Select
-                value={form.customerId || fallbackCustomerId}
-                onValueChange={(v) => {
-                  const customerId = v ?? "";
-                  const keepManual = batchEdited && form.batchCustomer.trim() !== "";
-                  setForm({
-                    ...form,
-                    customerId,
-                    batchCustomer: keepManual
-                      ? form.batchCustomer
-                      : customerId
-                        ? generateBatchCustomer(customerId, customers, items)
-                        : "",
-                  });
-                }}
-                items={customers.map((c) => ({ value: c.id, label: c.nama }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih" />
-                </SelectTrigger>
-                <SelectContent>
-                  {customers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.nama}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Batch Customer</Label>
-              <Input
-                value={form.batchCustomer}
-                onChange={(e) => {
-                  setBatchEdited(true);
-                  setForm({ ...form, batchCustomer: e.target.value });
-                }}
-              />
+            <div className="grid min-w-0 grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
+              <div className="min-w-0 space-y-2">
+                <Label>Customer</Label>
+                <SearchableCombobox
+                  items={customers.map((customer) => ({
+                    value: customer.id,
+                    label: customer.nama,
+                  }))}
+                  value={form.customerId || fallbackCustomerId}
+                  onValueChange={(next) => {
+                    const customerId = next ?? "";
+                    const keepManual = batchEdited && form.batchCustomer.trim() !== "";
+                    setForm({
+                      ...form,
+                      customerId,
+                      batchCustomer: keepManual
+                        ? form.batchCustomer
+                        : customerId
+                          ? generateBatchCustomer(customerId, customers, items)
+                          : "",
+                    });
+                  }}
+                  filterItem={(item, query) =>
+                    item.label.toLowerCase().includes(query.toLowerCase())
+                  }
+                  clearValueOnInput={false}
+                  preserveSearchQuery
+                  placeholder="Cari nama customer..."
+                  emptyText="Tidak ada customer yang cocok"
+                  itemNoun="customer"
+                  className="w-full bg-white"
+                />
+              </div>
+              <div className="min-w-0 space-y-2">
+                <Label htmlFor="material-batch-customer">Batch Customer</Label>
+                <Input
+                  id="material-batch-customer"
+                  className="w-full"
+                  value={form.batchCustomer}
+                  onChange={(e) => {
+                    setBatchEdited(true);
+                    setForm({ ...form, batchCustomer: e.target.value });
+                  }}
+                />
+              </div>
             </div>
             <div className="space-y-2 sm:col-span-2">
               <p className="text-sm font-medium text-slate-700">

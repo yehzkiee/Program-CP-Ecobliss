@@ -12,12 +12,16 @@ export type SearchableComboboxItem = {
 
 const RESULT_LIMIT = 100
 
+function defaultFilterItem(item: SearchableComboboxItem, query: string) {
+  return item.label.toLowerCase().includes(query.toLowerCase())
+}
+
 type SearchableComboboxProps<T extends SearchableComboboxItem> = {
   items: T[]
   value: string
   onValueChange: (value: string) => void
   /** Return true when `item` matches the typed query. Query is already trimmed. */
-  filterItem: (item: T, query: string) => boolean
+  filterItem?: (item: T, query: string) => boolean
   placeholder?: string
   emptyText?: string
   disabled?: boolean
@@ -27,29 +31,45 @@ type SearchableComboboxProps<T extends SearchableComboboxItem> = {
    * until the user picks another item.
    */
   clearValueOnInput?: boolean
+  /**
+   * Keep the typed text, including an empty string, until the user clicks
+   * a list item. Closing the field does not restore the selected label.
+   */
+  preserveSearchQuery?: boolean
   /** Noun used when the list is longer than the visible limit. */
   itemNoun?: string
+  listClassName?: string
+  itemClassName?: string
   renderItem?: (item: T) => React.ReactNode
+  /**
+   * Shown inside the field, beside the text and before the chevron, while the
+   * user is not typing. Keep it short so the name keeps its own space.
+   */
+  endAdornment?: React.ReactNode
 }
 
 function SearchableCombobox<T extends SearchableComboboxItem>({
   items,
   value,
   onValueChange,
-  filterItem,
+  filterItem = defaultFilterItem,
   placeholder = "Cari...",
   emptyText = "Tidak ada hasil",
   disabled = false,
   className,
-  clearValueOnInput = true,
+  clearValueOnInput = false,
+  preserveSearchQuery = true,
   itemNoun = "barang",
+  listClassName,
+  itemClassName,
   renderItem,
+  endAdornment,
 }: SearchableComboboxProps<T>) {
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [query, setQuery] = React.useState("")
   const [editing, setEditing] = React.useState(false)
   const [trackedValue, setTrackedValue] = React.useState(value)
-  const [typing, setTyping] = React.useState(false)
+  const typingRef = React.useRef(false)
 
   const selected = React.useMemo(
     () => items.find((item) => item.value === value) ?? null,
@@ -58,7 +78,8 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
 
   // Saat pengguna tidak sedang mengetik, kolom menampilkan label pilihan aktif.
   const idleLabel = selected?.label ?? ""
-  if (!editing && query !== idleLabel) {
+  const queryOwned = preserveSearchQuery && typingRef.current
+  if (!queryOwned && !editing && query !== idleLabel) {
     setQuery(idleLabel)
   }
 
@@ -66,10 +87,10 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
   // "storing information from previous renders"), tanpa menyentuh ref saat render.
   if (value !== trackedValue) {
     setTrackedValue(value)
-    if (trackedValue && !value && !typing) {
+    if (trackedValue && !value && !typingRef.current) {
       setQuery("")
     }
-    setTyping(false)
+    typingRef.current = false
   }
 
   const { visible, hint } = React.useMemo(() => {
@@ -104,7 +125,18 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
       items={visible}
       value={selected}
       inputValue={query}
-      onValueChange={(next) => onValueChange(next?.value ?? "")}
+      onValueChange={(next, details) => {
+        if (preserveSearchQuery && details.reason !== "item-press") {
+          details.cancel()
+          return
+        }
+        if (details.reason === "item-press") {
+          typingRef.current = false
+          setEditing(false)
+          setQuery(next?.label ?? "")
+        }
+        onValueChange(next?.value ?? "")
+      }}
       onOpenChange={(open) => {
         if (open) {
           requestAnimationFrame(() => inputRef.current?.select())
@@ -113,16 +145,28 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
         setEditing(false)
       }}
       onInputValueChange={(next, details) => {
-        if (details.reason === "input-change") {
+        if (
+          details.reason === "input-change" ||
+          (preserveSearchQuery && details.reason === "input-clear")
+        ) {
           setQuery(next)
           setEditing(true)
-          setTyping(true)
-          if (clearValueOnInput) onValueChange("")
+          typingRef.current = true
+          if (clearValueOnInput && details.reason === "input-change") {
+            onValueChange("")
+          }
+          return
+        }
+        if (
+          preserveSearchQuery &&
+          typingRef.current &&
+          details.reason !== "item-press"
+        ) {
           return
         }
         setQuery(next)
         setEditing(false)
-        setTyping(false)
+        typingRef.current = false
       }}
       itemToStringLabel={(item) => item.label}
       isItemEqualToValue={(a, b) => a.value === b.value}
@@ -130,23 +174,29 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
       autoHighlight
       disabled={disabled}
     >
-      <ComboboxPrimitive.InputGroup className="relative w-full">
+      <ComboboxPrimitive.InputGroup
+        className={cn(
+          "flex h-8 w-full min-w-0 items-center gap-1.5 rounded-lg border border-input bg-transparent pr-1 pl-2.5 text-sm transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
+          disabled && "cursor-not-allowed bg-input/50 opacity-50",
+          className,
+        )}
+      >
         <ComboboxPrimitive.Input
           ref={inputRef}
           disabled={disabled}
           placeholder={placeholder}
           onFocus={(event) => event.currentTarget.select()}
           data-slot="combobox-input"
-          className={cn(
-            "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent py-1 pr-8 pl-2.5 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 data-disabled:cursor-not-allowed data-disabled:opacity-50",
-            className,
-          )}
+          className="h-full min-w-0 flex-1 truncate border-0 bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
         />
+        {endAdornment && !editing ? (
+          <span className="flex shrink-0 items-center">{endAdornment}</span>
+        ) : null}
         <ComboboxPrimitive.Trigger
           type="button"
           disabled={disabled}
           aria-label="Buka daftar"
-          className="absolute top-1/2 right-1 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+          className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
         >
           <ChevronDownIcon className="size-4" />
         </ComboboxPrimitive.Trigger>
@@ -162,15 +212,27 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
             data-slot="combobox-content"
             className="relative z-50 max-h-(--available-height) w-(--anchor-width) origin-(--transform-origin) overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
           >
-            <ComboboxPrimitive.List className="max-h-72 overflow-y-auto overscroll-contain p-1 data-empty:p-0">
+            <ComboboxPrimitive.List
+              className={cn(
+                "max-h-60 overflow-y-auto scroll-smooth overscroll-contain p-1 data-empty:p-0",
+                listClassName,
+              )}
+            >
               {(item: T) => (
                 <ComboboxPrimitive.Item
                   key={item.value}
                   value={item}
-                  className="relative flex w-full cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-left text-sm outline-hidden select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50"
+                  className={cn(
+                    "relative flex w-full cursor-default items-center gap-2 rounded-md py-2 pr-8 pl-3 text-left text-sm outline-hidden select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50",
+                    itemClassName,
+                  )}
                 >
-                  <span className="whitespace-normal">
-                    {renderItem ? renderItem(item) : item.label}
+                  <span className="min-w-0 flex-1">
+                    {renderItem ? (
+                      renderItem(item)
+                    ) : (
+                      <span className="block truncate">{item.label}</span>
+                    )}
                   </span>
                   <ComboboxPrimitive.ItemIndicator
                     render={

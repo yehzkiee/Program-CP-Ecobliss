@@ -148,6 +148,8 @@ export const useAuthStore = create<AuthState>()(
 );
 
 let writeQueue: Promise<void> = Promise.resolve();
+/** Jangan timpa database dengan data awal sebelum pembacaan pertama berhasil. */
+let persistWrites = false;
 
 // Revisi dataset terakhir yang kita lihat dari server. Dipakai supaya dua orang
 // yang menyimpan bersamaan tidak saling menimpa: server menolak dengan 409.
@@ -155,20 +157,26 @@ let serverRevision = 0;
 
 const databaseStorage = {
   getItem: async () => {
-    const res = await fetch(withBasePath("/api/state"));
-    if (!res.ok) return null;
-    const body = (await res.json()) as {
-      state: Partial<DataState>;
-      version: number;
-      revision?: number;
-    };
-    serverRevision = body.revision ?? 0;
-    return body;
+    try {
+      const res = await fetch(withBasePath("/api/state"), { cache: "no-store" });
+      if (!res.ok) return null;
+      const body = (await res.json()) as {
+        state: Partial<DataState>;
+        version: number;
+        revision?: number;
+      };
+      serverRevision = body.revision ?? 0;
+      persistWrites = true;
+      return body;
+    } catch {
+      return null;
+    }
   },
   setItem: (
     _name: string,
     value: { state: Partial<DataState>; version?: number },
   ) => {
+    if (!persistWrites) return Promise.resolve();
     writeQueue = writeQueue
       .catch(() => undefined)
       .then(async () => {
@@ -259,6 +267,7 @@ export const useDataStore = create<DataState>()(
     {
       name: "program-cp-data",
       storage: databaseStorage,
+      skipHydration: true,
       version: 6,
       migrate: (persisted) => {
         const state = (persisted ?? {}) as Partial<DataState>;

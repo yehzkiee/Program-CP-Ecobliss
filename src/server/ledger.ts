@@ -78,9 +78,9 @@ export function buildLedgerRows(state: PersistedData): LedgerRow[] {
         line.jenis,
         line.refId,
         line.dariGudangId,
-        "",
+        line.batchCustomer ?? "",
         line.qty,
-        null,
+        line.btbId ?? null,
       ]);
       rows.push([
         waktu,
@@ -91,9 +91,9 @@ export function buildLedgerRows(state: PersistedData): LedgerRow[] {
         line.jenis,
         line.refId,
         line.keGudangId,
-        "",
+        line.batchCustomer ?? "",
         line.qty,
-        null,
+        line.btbId ?? null,
       ]);
     }
   }
@@ -147,10 +147,10 @@ export function buildLedgerRows(state: PersistedData): LedgerRow[] {
           "out",
           line.jenis,
           line.refId,
-          "",
-          "",
+          line.gudangId ?? "",
+          line.batchCustomer ?? "",
           line.out,
-          null,
+          line.btbId ?? null,
         ]);
       }
       if (line.in > 0) {
@@ -162,10 +162,10 @@ export function buildLedgerRows(state: PersistedData): LedgerRow[] {
           "in",
           line.jenis,
           line.refId,
-          "",
-          "",
+          line.gudangId ?? "",
+          line.batchCustomer ?? "",
           line.in,
-          null,
+          line.btbId ?? null,
         ]);
       }
     }

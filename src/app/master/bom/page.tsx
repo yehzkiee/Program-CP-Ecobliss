@@ -3,17 +3,11 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { CustomerFilterCombobox } from "@/components/shared/customer-filter-combobox";
-import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
+import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
 import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableCombobox } from "@/components/ui/combobox";
 import {
   Table,
   TableBody,
@@ -74,36 +68,33 @@ export default function BomListPage() {
           onValueChange={setFilterCustomer}
           className="w-full sm:w-56"
         />
-        <Select
-          value={filterFg}
-          onValueChange={(v) => setFilterFg(v ?? "all")}
-          items={fgFilterItems}
-        >
-          <SelectTrigger className="w-full bg-white sm:w-72">
-            <SelectValue placeholder="Finish Good">
-              {(value: string | null) => {
-                if (!value || value === "all") return "Semua Finish Good";
-                const fg = finishGoods.find((row) => row.id === value);
-                if (!fg) return "Semua Finish Good";
-                return (
-                  <ItemNameWithType jenis="fg">
-                    {fg.kode} - {fg.nama}
-                  </ItemNameWithType>
-                );
-              }}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Finish Good</SelectItem>
-            {finishGoods.map((fg) => (
-              <SelectItem key={fg.id} value={fg.id}>
-                <ItemNameWithType jenis="fg">
-                  {fg.kode} - {fg.nama}
+        <div className="w-full min-w-0 sm:w-72">
+          <SearchableCombobox
+            items={fgFilterItems}
+            value={filterFg}
+            onValueChange={(next) => setFilterFg(next || "all")}
+            filterItem={(item, query) =>
+              item.value === "all" ||
+              item.label.toLowerCase().includes(query.toLowerCase())
+            }
+            renderItem={(item) =>
+              item.value === "all" ? (
+                <span className="block truncate">{item.label}</span>
+              ) : (
+                <ItemNameWithType jenis="fg" className="w-full">
+                  {item.label}
                 </ItemNameWithType>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+              )
+            }
+            endAdornment={
+              filterFg !== "all" ? <ItemTypeBadge jenis="fg" /> : null
+            }
+            placeholder="Cari kode atau nama produk..."
+            emptyText="Tidak ada produk yang cocok"
+            itemNoun="produk"
+            className="bg-white"
+          />
+        </div>
         <ExportExcelButton
           page="BOM"
           rows={filtered.map((b) => {

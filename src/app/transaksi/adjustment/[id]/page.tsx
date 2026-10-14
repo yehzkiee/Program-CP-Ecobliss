@@ -13,15 +13,14 @@ import { FileUpload, type UploadedFile } from "@/components/shared/file-upload";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDocNo } from "@/lib/mock/data";
+import {
+  formatBtbLotLabel,
+  formatDocNo,
+  listBtbBatchStock,
+  lotsForCustomer,
+  type BtbBatchStock,
+} from "@/lib/mock/data";
 import { useAuthStore, useDataStore } from "@/lib/store";
 import type { Adjustment, AdjustmentLine } from "@/lib/types";
 import {
@@ -33,6 +32,7 @@ import {
   tableShellClass,
 } from "@/lib/table-styles";
 import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
+import { SearchableCombobox } from "@/components/ui/combobox";
 import { todayISO, uid, isSuperAdmin, cn } from "@/lib/utils";
 
 const NO_SO = "__none__";
@@ -42,6 +42,16 @@ function movementLabel(line: AdjustmentLine) {
   if (line.out > 0 && line.in === 0) return "Mengurangi stok";
   if (line.in > 0 && line.out > 0) return "Koreksi campuran";
   return "Tanpa perubahan";
+}
+
+function btbStockLabel(lot: BtbBatchStock, siblings: BtbBatchStock[], gudangName?: string) {
+  const duplicated = siblings.some(
+    (row) =>
+      row.btbNo === lot.btbNo &&
+      row.batchCustomer === lot.batchCustomer &&
+      row.gudangId !== lot.gudangId,
+  );
+  return formatBtbLotLabel(lot, duplicated ? gudangName : undefined);
 }
 
 function signedQty(line: AdjustmentLine) {
@@ -59,6 +69,10 @@ function AdjustmentFormInner() {
   const stockOpnames = useDataStore((s) => s.stockOpnames);
   const items = useDataStore((s) => s.items);
   const finishGoods = useDataStore((s) => s.finishGoods);
+  const btbs = useDataStore((s) => s.btbs);
+  const bkbs = useDataStore((s) => s.bkbs);
+  const transfers = useDataStore((s) => s.transfers);
+  const gudangList = useDataStore((s) => s.gudangList);
   const upsert = useDataStore((s) => s.upsertAdjustment);
   const addLog = useDataStore((s) => s.addLog);
   const user = useAuthStore((s) => s.currentUser);
@@ -100,6 +114,8 @@ function AdjustmentFormInner() {
         .map((item) => ({
           value: `item:${item.id}`,
           label: `${item.kode} - ${item.nama}`,
+          kode: item.kode,
+          nama: item.nama,
           jenis: "item" as const,
         })),
       ...finishGoods
@@ -107,11 +123,43 @@ function AdjustmentFormInner() {
         .map((fg) => ({
           value: `fg:${fg.id}`,
           label: `${fg.kode} - ${fg.nama}`,
+          kode: fg.kode,
+          nama: fg.nama,
           jenis: "fg" as const,
         })),
     ];
     return rows.sort((a, b) => a.label.localeCompare(b.label, "id"));
   }, [items, finishGoods]);
+  const pickedProduct = productOptions.find((row) => row.value === picker);
+  const gudangMap = useMemo(
+    () => Object.fromEntries(gudangList.map((gudang) => [gudang.id, gudang])),
+    [gudangList],
+  );
+  const batchStock = useMemo(
+    () =>
+      listBtbBatchStock({
+        btbs,
+        bkbs,
+        transfers,
+        adjustments: adjustments.filter((doc) => doc.id !== existing?.id),
+      }),
+    [adjustments, bkbs, btbs, existing?.id, transfers],
+  );
+
+  function customerOf(line: Pick<AdjustmentLine, "jenis" | "refId">) {
+    const master =
+      line.jenis === "item"
+        ? items.find((item) => item.id === line.refId)
+        : finishGoods.find((fg) => fg.id === line.refId);
+    return master?.customerId ?? "";
+  }
+
+  function lotsFor(line: AdjustmentLine) {
+    const matched = batchStock.filter(
+      (lot) => lot.jenis === line.jenis && lot.refId === line.refId && lot.qty > 0,
+    );
+    return lotsForCustomer(matched, customerOf(line));
+  }
 
   const mandiri = !soId;
 
@@ -216,6 +264,50 @@ function AdjustmentFormInner() {
       toast.error("Setiap baris wajib memilih barang dan Qty plus atau minus");
       return;
     }
+    if (lines.some((line) => !line.btbId)) {
+      toast.error("Setiap baris wajib memilih No. BTB");
+      return;
+    }
+    if (
+      lines.some(
+        (line) =>
+          !lotsFor(line).some(
+            (lot) =>
+              lot.btbId === line.btbId &&
+              lot.gudangId === line.gudangId &&
+              lot.batchCustomer === (line.batchCustomer ?? ""),
+          ),
+      )
+    ) {
+      toast.error("Batch tidak sesuai dengan customer barang");
+      return;
+    }
+    const requestedOut = new Map<string, number>();
+    for (const line of lines) {
+      if (line.out <= 0 || !line.btbId) continue;
+      const key = `${line.btbId}:${line.gudangId}:${line.batchCustomer}`;
+      requestedOut.set(key, (requestedOut.get(key) ?? 0) + line.out);
+    }
+    for (const line of lines) {
+      if (line.out <= 0 || !line.btbId) continue;
+      const available =
+        batchStock.find(
+          (lot) =>
+            lot.btbId === line.btbId &&
+            lot.gudangId === line.gudangId &&
+            lot.refId === line.refId &&
+            lot.batchCustomer === (line.batchCustomer ?? ""),
+        )?.qty ?? 0;
+      const need =
+        requestedOut.get(`${line.btbId}:${line.gudangId}:${line.batchCustomer}`) ??
+        line.out;
+      if (need > available) {
+        toast.error(
+          `Qty adjustment melebihi stok ${line.btbNo || "batch"} (tersedia ${available}, diminta ${need})`,
+        );
+        return;
+      }
+    }
     const payload: Adjustment = {
       id: existing?.id ?? uid("adj"),
       no: existing?.no ?? formatDocNo("ADJ", tanggal, adjustments.length + 1),
@@ -239,7 +331,9 @@ function AdjustmentFormInner() {
       userNama: user?.nama ?? "User",
       aksi: `Adjustment ${nextStatus}`,
       noTransaksi: payload.no,
-      detail: "",
+      detail: lines
+        .map((line) => `${line.btbNo || "-"} · out ${line.out} · in ${line.in}`)
+        .join(", "),
     });
     toast.success(`${payload.no} disimpan`);
     router.push(`/transaksi/adjustment/${payload.id}`);
@@ -251,6 +345,23 @@ function AdjustmentFormInner() {
       return;
     }
     if (!existing) return;
+    const stock = listBtbBatchStock({ btbs, bkbs, transfers, adjustments });
+    for (const line of existing.lines) {
+      if (line.out <= 0 || !line.btbId) continue;
+      const available =
+        stock.find(
+          (lot) =>
+            lot.btbId === line.btbId &&
+            lot.gudangId === line.gudangId &&
+            lot.refId === line.refId,
+        )?.qty ?? 0;
+      if (line.out > available) {
+        toast.error(
+          `Stok ${line.btbNo || "batch"} tidak cukup untuk menyetujui adjustment (tersedia ${available}, diminta ${line.out})`,
+        );
+        return;
+      }
+    }
     const payload: Adjustment = {
       ...existing,
       status: ok ? "disetujui" : "ditolak",
@@ -287,7 +398,7 @@ function AdjustmentFormInner() {
       <BackLink href="/transaksi/adjustment" />
       <PageHeader
         title={isNew ? "Buat Adjustment" : (existing?.no ?? "Adjustment")}
-        description="Bisa merujuk Stock Opname, atau dibuat mandiri tanpa referensi SO. Persetujuan hanya oleh Super Admin."
+        description="Setiap baris memilih No. BTB. Qty plus menambah stok batch itu, qty minus menguranginya, setelah adjustment disetujui."
         action={!isNew ? <StatusBadge status={status} /> : null}
       />
 
@@ -308,23 +419,20 @@ function AdjustmentFormInner() {
               {selectedSo?.no || "Tanpa Stock Opname"}
             </p>
           ) : (
-            <Select
-              value={soId || NO_SO}
-              onValueChange={(v) => loadFromSo(!v || v === NO_SO ? "" : v)}
+            <SearchableCombobox
               items={soSelectItems}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Opsional" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_SO}>Tanpa Stock Opname</SelectItem>
-                {stockOpnames.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.no}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              value={soId || NO_SO}
+              onValueChange={(next) =>
+                loadFromSo(!next || next === NO_SO ? "" : next)
+              }
+              filterItem={(item, query) =>
+                item.value === NO_SO ||
+                item.label.toLowerCase().includes(query.toLowerCase())
+              }
+              placeholder="Cari no. stock opname..."
+              emptyText="Tidak ada stock opname yang cocok"
+              itemNoun="stock opname"
+            />
           )}
         </div>
         <div className="space-y-1.5">
@@ -346,34 +454,34 @@ function AdjustmentFormInner() {
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
               <div className="min-w-0 flex-1 space-y-1.5">
                 <Label>Material / Finish Good</Label>
-                <Select
-                  value={picker}
-                  onValueChange={(v) => setPicker(v ?? "")}
+                <SearchableCombobox
                   items={productOptions}
-                >
-                  <SelectTrigger className="bg-white">
-                    <SelectValue placeholder="Pilih Material atau Finish Good...">
-                      {(value: string | null) => {
-                        const option = productOptions.find((row) => row.value === value);
-                        if (!option) return "Pilih Material atau Finish Good...";
-                        return (
-                          <ItemNameWithType jenis={option.jenis}>
-                            {option.label}
-                          </ItemNameWithType>
-                        );
-                      }}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,36rem)]">
-                    {productOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        <ItemNameWithType jenis={option.jenis}>
-                          {option.label}
-                        </ItemNameWithType>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  value={picker}
+                  onValueChange={setPicker}
+                  filterItem={(item, query) => {
+                    const keyword = query.toLowerCase();
+                    return (
+                      item.kode.toLowerCase().includes(keyword) ||
+                      item.nama.toLowerCase().includes(keyword)
+                    );
+                  }}
+                  renderItem={(item) => (
+                    <ItemNameWithType
+                      jenis={item.jenis}
+                      className="w-full min-w-0 flex-nowrap"
+                    >
+                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                    </ItemNameWithType>
+                  )}
+                  endAdornment={
+                    pickedProduct ? (
+                      <ItemTypeBadge jenis={pickedProduct.jenis} />
+                    ) : null
+                  }
+                  placeholder="Cari kode atau nama barang..."
+                  emptyText="Tidak ada barang yang cocok"
+                  className="bg-white"
+                />
               </div>
               <Button
                 type="button"
@@ -397,6 +505,7 @@ function AdjustmentFormInner() {
                 <th className={tableHeadCellClass}>Jenis</th>
                 <th className={tableHeadCellClass}>Kode</th>
                 <th className={tableHeadCellClass}>Nama</th>
+                <th className={tableHeadCellClass}>Batch / No. BTB</th>
                 <th className={tableHeadCellRightClass}>Qty</th>
                 <th className={tableHeadCellRightClass}>Out</th>
                 <th className={tableHeadCellRightClass}>In</th>
@@ -407,7 +516,7 @@ function AdjustmentFormInner() {
               {lines.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-3 py-4 text-sm text-muted-foreground"
                   >
                     {mandiri
@@ -424,6 +533,52 @@ function AdjustmentFormInner() {
                   <td className={tableBodyCellClass}>{l.kode}</td>
                   <td className={`${tableBodyCellClass} whitespace-normal`}>
                     {l.nama}
+                  </td>
+                  <td className={tableBodyCellClass}>
+                    {readOnly ? (
+                      l.btbNo || "-"
+                    ) : (
+                      <SearchableCombobox
+                        items={lotsFor(l).map((lot) => ({
+                          value: `${lot.btbId}:${lot.gudangId}:${lot.batchCustomer}`,
+                          label: btbStockLabel(
+                            lot,
+                            lotsFor(l),
+                            gudangMap[lot.gudangId]?.nama,
+                          ),
+                        }))}
+                        value={
+                          l.btbId
+                            ? `${l.btbId}:${l.gudangId}:${l.batchCustomer ?? ""}`
+                            : ""
+                        }
+                        onValueChange={(next) => {
+                          const lot = lotsFor(l).find(
+                            (row) =>
+                              `${row.btbId}:${row.gudangId}:${row.batchCustomer}` ===
+                              next,
+                          );
+                          if (!lot) return;
+                          setLines((prev) =>
+                            prev.map((row, i) =>
+                              i === idx
+                                ? {
+                                    ...row,
+                                    btbId: lot.btbId,
+                                    btbNo: lot.btbNo,
+                                    batchCustomer: lot.batchCustomer,
+                                    gudangId: lot.gudangId,
+                                  }
+                                : row,
+                            ),
+                          );
+                        }}
+                        placeholder="Cari No. BTB..."
+                        emptyText="Tidak ada batch untuk customer ini"
+                        itemNoun="batch"
+                        className="bg-white"
+                      />
+                    )}
                   </td>
                   <td className={tableBodyCellRightClass}>
                     {!readOnly && mandiri ? (

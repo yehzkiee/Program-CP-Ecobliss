@@ -545,9 +545,9 @@ function rebuildLedger(database: DatabaseSync, state: PersistedData) {
         line.jenis,
         line.refId,
         line.dariGudangId,
-        "",
+        line.batchCustomer ?? "",
         line.qty,
-        null,
+        line.btbId ?? null,
       );
       insert.run(
         waktu,
@@ -558,9 +558,9 @@ function rebuildLedger(database: DatabaseSync, state: PersistedData) {
         line.jenis,
         line.refId,
         line.keGudangId,
-        "",
+        line.batchCustomer ?? "",
         line.qty,
-        null,
+        line.btbId ?? null,
       );
     }
   }
@@ -614,10 +614,10 @@ function rebuildLedger(database: DatabaseSync, state: PersistedData) {
           "out",
           line.jenis,
           line.refId,
-          "",
-          "",
+          line.gudangId ?? "",
+          line.batchCustomer ?? "",
           line.out,
-          null,
+          line.btbId ?? null,
         );
       }
       if (line.in > 0) {
@@ -629,10 +629,10 @@ function rebuildLedger(database: DatabaseSync, state: PersistedData) {
           "in",
           line.jenis,
           line.refId,
-          "",
-          "",
+          line.gudangId ?? "",
+          line.batchCustomer ?? "",
           line.in,
-          null,
+          line.btbId ?? null,
         );
       }
     }

@@ -43,7 +43,7 @@ export function DocLineViewTable({
         <thead>
           <tr className="border-b bg-muted/30">
             <th className={tableHeadCellClass}>{nameHeader}</th>
-            <th className={tableHeadCellClass}>Batch Customer</th>
+            <th className={tableHeadCellClass}>Batch</th>
             <th className={tableHeadCellClass}>Qty</th>
             <th className={tableHeadCellClass}>Gudang</th>
             <th className={tableHeadCellClass}>Keterangan</th>

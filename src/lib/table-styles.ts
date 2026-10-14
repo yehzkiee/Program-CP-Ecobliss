@@ -44,11 +44,12 @@ export const colGroupDocLineItems = [
 /** Adjustment line items. */
 export const colGroupAdjustmentLines = [
   "w-[72px]",
-  "w-[120px]",
+  "w-[110px]",
   "w-auto",
-  "w-[80px]",
-  "w-[80px]",
-  "w-[80px]",
+  "w-[220px]",
+  "w-[72px]",
+  "w-[72px]",
+  "w-[72px]",
   "w-[140px]",
 ] as const;
 

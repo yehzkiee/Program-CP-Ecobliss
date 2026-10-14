@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { CustomerFilterCombobox } from "@/components/shared/customer-filter-combobox";
+import { SearchableCombobox } from "@/components/ui/combobox";
 import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
 import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader, StatusBadge } from "@/components/shared/page-header";
@@ -75,7 +76,7 @@ function generateBatchCustomer(
   const seqs = finishGoods
     .filter((f) => f.customerId === customerId && f.id !== excludeId)
     .map((f) => {
-      const match = f.batchCustomer.match(/FG(\d+)$/i);
+      const match = (f.batchCustomer ?? "").match(/FG(\d+)$/i);
       return match ? Number(match[1]) : 0;
     });
   const next = (seqs.length ? Math.max(...seqs) : 0) + 1;
@@ -90,6 +91,7 @@ export default function FinishGoodPage() {
   const [filterCust, setFilterCust] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [open, setOpen] = useState(false);
+  const [batchEdited, setBatchEdited] = useState(false);
   const [form, setForm] = useState<FinishGood>(blank());
 
   const custMap = useMemo(
@@ -136,6 +138,7 @@ export default function FinishGoodPage() {
 
   function openCreate() {
     const customerId = fallbackCustomerId;
+    setBatchEdited(false);
     setForm({
       ...blank(),
       id: uid("fg"),
@@ -153,8 +156,8 @@ export default function FinishGoodPage() {
       return;
     }
     const batchCustomer =
-      form.batchCustomer ||
-      generateBatchCustomer(form.customerId, customers, finishGoods);
+      form.batchCustomer.trim() ||
+      generateBatchCustomer(form.customerId, customers, finishGoods, form.id);
     upsert({ ...form, batchCustomer, konversi1: 1 });
     toast.success("Finish Good disimpan");
     setOpen(false);
@@ -205,7 +208,7 @@ export default function FinishGoodPage() {
             kode: i.kode,
             nama: i.nama,
             customer: resolveCustomerNama(i.customerId),
-            batch: i.batchCustomer,
+            batch: i.batchCustomer?.trim() || "-",
             uom1: i.uom1 ? `${i.uom1} (${i.konversi1})` : "-",
             uom2: i.uom2 ? `${i.uom2} (${i.konversi2})` : "-",
             uom3: i.uom3 ? `${i.uom3} (${i.konversi3})` : "-",
@@ -253,7 +256,7 @@ export default function FinishGoodPage() {
                   <ItemNameWithType jenis="fg">{i.nama}</ItemNameWithType>
                 </TableCell>
                 <TableCell>{resolveCustomerNama(i.customerId)}</TableCell>
-                <TableCell>{i.batchCustomer}</TableCell>
+                <TableCell>{i.batchCustomer?.trim() || "-"}</TableCell>
                 <TableCell>
                   {i.uom1 ? `${i.uom1} (${i.konversi1})` : "-"}
                 </TableCell>
@@ -294,41 +297,47 @@ export default function FinishGoodPage() {
             </div>
             <div className="space-y-2">
               <Label>Customer</Label>
-              <Select
+              <SearchableCombobox
+                items={customers.map((customer) => ({
+                  value: customer.id,
+                  label: customer.nama,
+                }))}
                 value={form.customerId || fallbackCustomerId}
-                onValueChange={(v) => {
-                  const customerId = v ?? "";
+                onValueChange={(next) => {
+                  const customerId = next ?? "";
+                  const keepManual = batchEdited && form.batchCustomer.trim() !== "";
                   setForm({
                     ...form,
                     customerId,
-                    batchCustomer: customerId
-                      ? generateBatchCustomer(
-                          customerId,
-                          customers,
-                          finishGoods,
-                        )
-                      : "",
+                    batchCustomer: keepManual
+                      ? form.batchCustomer
+                      : customerId
+                        ? generateBatchCustomer(
+                            customerId,
+                            customers,
+                            finishGoods,
+                            form.id,
+                          )
+                        : "",
                   });
                 }}
-                items={customers.map((c) => ({ value: c.id, label: c.nama }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih" />
-                </SelectTrigger>
-                <SelectContent>
-                  {customers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.nama}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="Cari nama customer..."
+                emptyText="Tidak ada customer yang cocok"
+                itemNoun="customer"
+                className="bg-white"
+              />
             </div>
-            <div className="space-y-2">
-              <Label>Batch Customer</Label>
-              <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-                {form.batchCustomer || "-"}
-              </p>
+            <div className="min-w-0 space-y-2">
+              <Label htmlFor="finish-good-batch-customer">Batch Customer</Label>
+              <Input
+                id="finish-good-batch-customer"
+                className="w-full"
+                value={form.batchCustomer}
+                onChange={(e) => {
+                  setBatchEdited(true);
+                  setForm({ ...form, batchCustomer: e.target.value });
+                }}
+              />
             </div>
             <div className="space-y-2 sm:col-span-2">
               <p className="text-sm font-medium text-slate-700">

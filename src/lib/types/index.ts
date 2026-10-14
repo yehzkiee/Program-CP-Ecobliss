@@ -146,6 +146,8 @@ export interface Btb {
   customerId?: string;
   noPo?: string;
   noSpk?: string;
+  /** Nama batch untuk seluruh barang yang masuk pada BTB ini. */
+  batch?: string;
   /** Catatan dokumen, terpisah dari keterangan per baris. */
   keterangan?: string;
   items: BtbLineItem[];
@@ -237,6 +239,11 @@ export interface AdjustmentLine {
   out: number;
   in: number;
   keterangan: string;
+  /** Lot BTB yang dikoreksi. Kosong hanya pada dokumen lama. */
+  btbId?: string;
+  btbNo?: string;
+  batchCustomer?: string;
+  gudangId?: string;
 }
 
 export interface Adjustment {
@@ -263,6 +270,10 @@ export interface TransferLine {
   dariGudangId: string;
   keGudangId: string;
   keterangan: string;
+  /** Lot BTB yang dipindah dari gudang asal. Kosong hanya pada dokumen lama. */
+  btbId?: string;
+  btbNo?: string;
+  batchCustomer?: string;
 }
 
 export interface TransferGudang {

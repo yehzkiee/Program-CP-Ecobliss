@@ -12,6 +12,7 @@ import {
 } from "@/components/shared/page-header";
 import { DetailField, DocLink } from "@/components/shared/detail-field";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { SearchableCombobox } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -51,6 +52,7 @@ export default function ItemDetailPage() {
   const items = useDataStore((s) => s.items);
   const customers = useDataStore((s) => s.customers);
   const btbs = useDataStore((s) => s.btbs);
+  const bkbs = useDataStore((s) => s.bkbs);
   const gudangList = useDataStore((s) => s.gudangList);
   const upsert = useDataStore((s) => s.upsertItem);
   const remove = useDataStore((s) => s.deleteItem);
@@ -70,8 +72,8 @@ export default function ItemDetailPage() {
   );
 
   const batches = useMemo(
-    () => (item ? getBatchesForItem(item.id, btbs) : []),
-    [item, btbs],
+    () => (item ? getBatchesForItem(item.id, btbs, bkbs) : []),
+    [item, btbs, bkbs],
   );
 
   if (!item) {
@@ -164,7 +166,7 @@ export default function ItemDetailPage() {
         </CardHeader>
         <CardContent>
           {editing ? (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-1.5">
                 <Label>Kode Material</Label>
                 <Input
@@ -179,26 +181,41 @@ export default function ItemDetailPage() {
                   onChange={(e) => setForm({ ...draft, nama: e.target.value })}
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label>Customer</Label>
-                <Select
-                  value={draft.customerId}
-                  onValueChange={(v) =>
-                    setForm({ ...draft, customerId: v ?? "" })
-                  }
-                  items={customers.map((c) => ({ value: c.id, label: c.nama }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.nama}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="grid min-w-0 grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2 lg:col-span-3">
+                <div className="min-w-0 space-y-1.5">
+                  <Label>Customer</Label>
+                  <SearchableCombobox
+                    items={customers.map((customer) => ({
+                      value: customer.id,
+                      label: customer.nama,
+                    }))}
+                    value={draft.customerId}
+                    onValueChange={(next) =>
+                      setForm({ ...draft, customerId: next ?? "" })
+                    }
+                    filterItem={(item, query) =>
+                      item.label.toLowerCase().includes(query.toLowerCase())
+                    }
+                    clearValueOnInput={false}
+                    preserveSearchQuery
+                    placeholder="Cari nama customer..."
+                    emptyText="Tidak ada customer yang cocok"
+                    itemNoun="customer"
+                    className="w-full bg-white"
+                  />
+                </div>
+                <div className="min-w-0 space-y-1.5">
+                  <Label htmlFor="edit-material-batch-customer">Batch Customer</Label>
+                  <Input
+                    id="edit-material-batch-customer"
+                    type="text"
+                    className="w-full"
+                    value={draft.batchCustomer}
+                    onChange={(e) =>
+                      setForm({ ...draft, batchCustomer: e.target.value })
+                    }
+                  />
+                </div>
               </div>
               <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
                 <p className="text-sm font-medium text-slate-700">
@@ -327,16 +344,6 @@ export default function ItemDetailPage() {
                       ...draft,
                       konversi3: Number(e.target.value) || 0,
                     })
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Batch Customer</Label>
-                <Input
-                  type="text"
-                  value={draft.batchCustomer}
-                  onChange={(e) =>
-                    setForm({ ...draft, batchCustomer: e.target.value })
                   }
                 />
               </div>

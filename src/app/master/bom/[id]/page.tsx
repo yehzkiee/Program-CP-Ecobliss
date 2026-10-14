@@ -5,19 +5,13 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
-import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
+import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
+import { SearchableCombobox } from "@/components/ui/combobox";
 import { BackLink, PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getLatestBomRevision } from "@/lib/mock/data";
 import { useAuthStore, useDataStore } from "@/lib/store";
@@ -398,51 +392,38 @@ export default function BomFormPage() {
               </div>
               <div className="space-y-2">
                 <Label>Customer</Label>
-                <Select
+                <SearchableCombobox
+                  items={customers.map((customer) => ({
+                    value: customer.id,
+                    label: customer.nama,
+                  }))}
                   value={customerId}
-                  onValueChange={(v) => setCustomerId(v ?? "")}
-                  items={customers.map((c) => ({ value: c.id, label: c.nama }))}
+                  onValueChange={(next) => setCustomerId(next ?? "")}
                   disabled={!canEdit}
-                >
-                  <SelectTrigger disabled={!canEdit}>
-                    <SelectValue placeholder="Pilih Customer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.nama}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder="Cari nama customer..."
+                  emptyText="Tidak ada customer yang cocok"
+                  itemNoun="customer"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Finish Good</Label>
-                <Select
-                  value={fgId}
-                  onValueChange={(v) => setFgId(v ?? "")}
+                <SearchableCombobox
                   items={fgSelectItems}
+                  value={fgId}
+                  onValueChange={(next) => setFgId(next ?? "")}
                   disabled={!canEdit}
-                >
-                  <SelectTrigger disabled={!canEdit}>
-                    <SelectValue placeholder="Pilih Finish Good">
-                      {(value: string | null) => {
-                        const fg = finishGoods.find((row) => row.id === value);
-                        if (!fg) return "Pilih Finish Good";
-                        return (
-                          <ItemNameWithType jenis="fg">{fg.nama}</ItemNameWithType>
-                        );
-                      }}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {finishGoods.map((f) => (
-                      <SelectItem key={f.id} value={f.id}>
-                        <ItemNameWithType jenis="fg">{f.nama}</ItemNameWithType>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  renderItem={(item) => (
+                    <ItemNameWithType jenis="fg" className="w-full">
+                      {item.label}
+                    </ItemNameWithType>
+                  )}
+                  endAdornment={
+                    fgId ? <ItemTypeBadge jenis="fg" /> : null
+                  }
+                  placeholder="Cari finish good..."
+                  emptyText="Tidak ada finish good yang cocok"
+                  itemNoun="finish good"
+                />
               </div>
               <div className="space-y-2 sm:col-span-2">
                 <Label>Keterangan</Label>
@@ -481,40 +462,33 @@ export default function BomFormPage() {
               ) : (
                 lineItems.map((line, idx) => (
                   <div key={idx} className="flex flex-col gap-2 sm:flex-row">
-                    <Select
-                      value={line.itemId}
-                      onValueChange={(v) => {
-                        const vv = v ?? "";
-                        const next = [...lineItems];
-                        next[idx] = {
-                          ...line,
-                          itemId: vv,
-                          uom: itemMap[vv]?.uom1 ?? "",
-                        };
-                        setLineItems(next);
-                      }}
+                    <SearchableCombobox
                       items={itemSelectItems}
+                      value={line.itemId}
                       disabled={!canEdit}
-                    >
-                      <SelectTrigger className="flex-1" disabled={!canEdit}>
-                        <SelectValue placeholder="Pilih material">
-                          {(value: string | null) => {
-                            const item = items.find((row) => row.id === value);
-                            if (!item) return "Pilih material";
-                            return (
-                              <ItemNameWithType jenis="item">{item.nama}</ItemNameWithType>
-                            );
-                          }}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {items.map((i) => (
-                          <SelectItem key={i.id} value={i.id}>
-                            <ItemNameWithType jenis="item">{i.nama}</ItemNameWithType>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      onValueChange={(next) => {
+                        const itemId = next ?? "";
+                        const nextLines = [...lineItems];
+                        nextLines[idx] = {
+                          ...line,
+                          itemId,
+                          uom: itemMap[itemId]?.uom1 ?? "",
+                        };
+                        setLineItems(nextLines);
+                      }}
+                      renderItem={(item) => (
+                        <ItemNameWithType jenis="item" className="w-full">
+                          {item.label}
+                        </ItemNameWithType>
+                      )}
+                      endAdornment={
+                        line.itemId ? <ItemTypeBadge jenis="item" /> : null
+                      }
+                      placeholder="Cari material..."
+                      emptyText="Tidak ada material yang cocok"
+                      itemNoun="material"
+                      className="min-w-0 flex-1"
+                    />
                     <div className="flex items-center gap-2">
                       <Input
                         type="number"
@@ -581,40 +555,33 @@ export default function BomFormPage() {
               ) : (
                 lineFgs.map((line, idx) => (
                   <div key={idx} className="flex flex-col gap-2 sm:flex-row">
-                    <Select
-                      value={line.fgId}
-                      onValueChange={(v) => {
-                        const vv = v ?? "";
-                        const next = [...lineFgs];
-                        next[idx] = {
-                          ...line,
-                          fgId: vv,
-                          uom: fgMap[vv]?.uom1 ?? "",
-                        };
-                        setLineFgs(next);
-                      }}
+                    <SearchableCombobox
                       items={fgSelectItems}
+                      value={line.fgId}
                       disabled={!canEdit}
-                    >
-                      <SelectTrigger className="flex-1" disabled={!canEdit}>
-                        <SelectValue placeholder="Pilih Finish Good">
-                          {(value: string | null) => {
-                            const fg = finishGoods.find((row) => row.id === value);
-                            if (!fg) return "Pilih Finish Good";
-                            return (
-                              <ItemNameWithType jenis="fg">{fg.nama}</ItemNameWithType>
-                            );
-                          }}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {finishGoods.map((f) => (
-                          <SelectItem key={f.id} value={f.id}>
-                            <ItemNameWithType jenis="fg">{f.nama}</ItemNameWithType>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      onValueChange={(next) => {
+                        const nextFgId = next ?? "";
+                        const nextLines = [...lineFgs];
+                        nextLines[idx] = {
+                          ...line,
+                          fgId: nextFgId,
+                          uom: fgMap[nextFgId]?.uom1 ?? "",
+                        };
+                        setLineFgs(nextLines);
+                      }}
+                      renderItem={(item) => (
+                        <ItemNameWithType jenis="fg" className="w-full">
+                          {item.label}
+                        </ItemNameWithType>
+                      )}
+                      endAdornment={
+                        line.fgId ? <ItemTypeBadge jenis="fg" /> : null
+                      }
+                      placeholder="Cari finish good..."
+                      emptyText="Tidak ada finish good yang cocok"
+                      itemNoun="finish good"
+                      className="min-w-0 flex-1"
+                    />
                     <div className="flex items-center gap-2">
                       <Input
                         type="number"

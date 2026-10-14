@@ -250,7 +250,7 @@ export const btbs: Btb[] = [
         satuan: "LBR",
         gudangId: "g1",
         keterangan: "Penerimaan awal",
-        qtySisa: 730,
+        qtySisa: 980,
       },
       {
         itemId: "i2",
@@ -270,7 +270,7 @@ export const btbs: Btb[] = [
         satuan: "PCS",
         gudangId: "g2",
         keterangan: "FG dari produksi",
-        qtySisa: 180,
+        qtySisa: 200,
       },
     ],
   },
@@ -689,16 +689,27 @@ export function buildStockRows(input?: {
       for (const line of event.doc.lines ?? []) {
         const master =
           line.jenis === "item" ? itemMap[line.refId] : fgMap[line.refId];
+        const specific = Boolean(line.gudangId && line.batchCustomer);
         if (line.out > 0) {
           takeFromLots(
             lots,
-            (lot) => lot.jenis === line.jenis && lot.refId === line.refId,
+            (lot) =>
+              lot.jenis === line.jenis &&
+              lot.refId === line.refId &&
+              (!specific ||
+                (lot.gudangId === line.gudangId &&
+                  lot.batchCustomer === line.batchCustomer)),
             line.out,
           );
         }
         if (line.in > 0) {
           const host = lots.find(
-            (lot) => lot.jenis === line.jenis && lot.refId === line.refId,
+            (lot) =>
+              lot.jenis === line.jenis &&
+              lot.refId === line.refId &&
+              (!specific ||
+                (lot.gudangId === line.gudangId &&
+                  lot.batchCustomer === line.batchCustomer)),
           );
           pushMasuk(
             line.jenis,
@@ -706,8 +717,8 @@ export function buildStockRows(input?: {
             master?.kode ?? line.kode,
             master?.nama ?? line.nama,
             host?.customerId || master?.customerId || "",
-            host?.gudangId || gudangs[0]?.id || "",
-            host?.batchCustomer || "",
+            specific ? line.gudangId || "" : host?.gudangId || gudangs[0]?.id || "",
+            specific ? line.batchCustomer || "" : host?.batchCustomer || "",
             line.in,
             event.doc.tanggal,
           );
@@ -723,7 +734,8 @@ export function buildStockRows(input?: {
         (lot) =>
           lot.jenis === line.jenis &&
           lot.refId === line.refId &&
-          lot.gudangId === line.dariGudangId,
+          lot.gudangId === line.dariGudangId &&
+          (!line.batchCustomer || lot.batchCustomer === line.batchCustomer),
         line.qty,
       );
       for (const part of taken) {
@@ -1060,6 +1072,35 @@ export function prefixStoredDocNos<
   };
 }
 
+/** Cari BTB dari id internal atau nomor dokumen (mis. BTB-261013-00003). */
+export function findBtbDocument(docs: Btb[], key: string) {
+  let decoded = key;
+  try {
+    decoded = decodeURIComponent(key);
+  } catch {
+    decoded = key;
+  }
+  const normalized = decoded.trim();
+  if (!normalized) return undefined;
+  return (
+    docs.find((doc) => doc.id === normalized) ??
+    docs.find((doc) => doc.no === normalized)
+  );
+}
+
+/** Nama batch dokumen. Dokumen lama memakai nama yang sama di setiap baris. */
+export function btbBatchName(
+  doc: Pick<Btb, "batch" | "items" | "fgs"> | undefined,
+) {
+  const named = doc?.batch?.trim() ?? "";
+  if (named) return named;
+  const names = [...(doc?.items ?? []), ...(doc?.fgs ?? [])]
+    .map((line) => line.batchCustomer.trim())
+    .filter(Boolean);
+  if (names.length === 0) return "";
+  return names.every((name) => name === names[0]) ? names[0] : "";
+}
+
 export function getLatestBomRevision(bom: Bom) {
   return [...bom.revisions].sort((a, b) => b.revisi - a.revisi)[0];
 }
@@ -1096,11 +1137,434 @@ export function ensureSeedById<T extends { id: string }>(
   return Array.from(map.values());
 }
 
+function normLotText(value: string | undefined | null) {
+  return (value ?? "").trim();
+}
+
+/** Kunci baris penerimaan: satu BTB, satu jenis, satu indeks baris. */
+export function btbLineKey(
+  btbId: string,
+  jenis: "item" | "fg",
+  index: number,
+) {
+  return `${btbId}::${jenis}::${index}`;
+}
+
+type BtbLotRef = {
+  btbId: string;
+  btbNo: string;
+  refId: string;
+  batchCustomer: string;
+  gudangId: string;
+  qty: number;
+};
+
+function bkbLotRefs(doc: Bkb, jenis: "item" | "fg"): BtbLotRef[] {
+  if (jenis === "item") {
+    return (doc.items ?? []).map((line) => ({
+      btbId: line.btbId,
+      btbNo: line.btbNo,
+      refId: line.itemId,
+      batchCustomer: line.batchCustomer,
+      gudangId: line.gudangId,
+      qty: Number(line.qty) || 0,
+    }));
+  }
+  return (doc.fgs ?? []).map((line) => ({
+    btbId: line.btbId,
+    btbNo: line.btbNo,
+    refId: line.fgId,
+    batchCustomer: line.batchCustomer,
+    gudangId: line.gudangId,
+    qty: Number(line.qty) || 0,
+  }));
+}
+
+function resolveIssuedBtbId(ref: BtbLotRef, docs: Btb[]) {
+  if (ref.btbId && docs.some((doc) => doc.id === ref.btbId)) return ref.btbId;
+  const no = normLotText(ref.btbNo);
+  if (!no) return null;
+  const matches = docs.filter((doc) => normLotText(doc.no) === no);
+  return matches.length === 1 ? matches[0].id : null;
+}
+
+function lotBucketKey(
+  btbId: string,
+  jenis: "item" | "fg",
+  refId: string,
+  batchCustomer: string,
+  gudangId: string,
+) {
+  return [
+    btbId,
+    jenis,
+    refId,
+    normLotText(batchCustomer),
+    gudangId,
+  ].join("\u0001");
+}
+
+/**
+ * Sisa tiap baris BTB = qty awal baris itu − qty BKB yang merujuk
+ * dokumen BTB yang sama, material/FG yang sama, batch yang sama, dan gudang yang sama.
+ * Qty keluar tidak dijumlah lintas material atau lintas batch.
+ * Beberapa baris dengan identitas sama dipotong berurutan, supaya sisa tidak dihitung dua kali.
+ */
+export function remainingQtyByBtbLine(docs: Btb[], bkbDocs: Bkb[]) {
+  const issued = new Map<string, number>();
+  for (const jenis of ["item", "fg"] as const) {
+    for (const bkb of bkbDocs) {
+      for (const ref of bkbLotRefs(bkb, jenis)) {
+        if (ref.qty <= 0) continue;
+        const btbId = resolveIssuedBtbId(ref, docs);
+        if (!btbId) continue;
+        const key = lotBucketKey(
+          btbId,
+          jenis,
+          ref.refId,
+          ref.batchCustomer,
+          ref.gudangId,
+        );
+        issued.set(key, (issued.get(key) ?? 0) + ref.qty);
+      }
+    }
+  }
+
+  const remaining = new Map<string, number>();
+  for (const btb of docs) {
+    for (const jenis of ["item", "fg"] as const) {
+      const lines = jenis === "item" ? (btb.items ?? []) : (btb.fgs ?? []);
+      const consumed = new Map<string, number>();
+      lines.forEach((line, index) => {
+        const mapKey = btbLineKey(btb.id, jenis, index);
+        if (isTransferGeneratedBtbLine(line.keterangan)) {
+          remaining.set(mapKey, 0);
+          return;
+        }
+        const refId = "itemId" in line ? line.itemId : line.fgId;
+        const key = lotBucketKey(
+          btb.id,
+          jenis,
+          refId,
+          line.batchCustomer,
+          line.gudangId,
+        );
+        const awal = Math.max(0, Number(line.qty) || 0);
+        const totalIssued = issued.get(key) ?? 0;
+        const used = consumed.get(key) ?? 0;
+        const take = Math.min(awal, Math.max(0, totalIssued - used));
+        consumed.set(key, used + take);
+        remaining.set(mapKey, awal - take);
+      });
+    }
+  }
+  return remaining;
+}
+
+export type BtbBatchStock = {
+  key: string;
+  btbId: string;
+  btbNo: string;
+  jenis: "item" | "fg";
+  refId: string;
+  /** Customer pada dokumen BTB asal. Kosong berarti batch umum. */
+  customerId: string;
+  batchCustomer: string;
+  gudangId: string;
+  qty: number;
+  tanggal: string;
+};
+
+/** Label opsi: `No. BTB - Batch Customer - (Stok: Qty)`. Batch kosong tidak menambah pemisah ganda. */
+export function formatBtbLotLabel(
+  lot: { btbNo: string; batchCustomer?: string; qty: number },
+  gudangName?: string,
+) {
+  const no = lot.btbNo.trim() || "-";
+  const batch = (lot.batchCustomer ?? "").trim();
+  const place = gudangName ? ` · ${gudangName}` : "";
+  const stock = `(Stok: ${lot.qty})`;
+  if (!batch) return `${no}${place} - ${stock}`;
+  return `${no} - ${batch}${place} - ${stock}`;
+}
+
+/**
+ * Lot milik customer yang dipilih.
+ * Jika customer itu tidak punya lot, yang tersisa adalah batch umum (tanpa customer).
+ */
+export function lotsForCustomer<T extends { customerId?: string }>(
+  lots: T[],
+  customerId: string | undefined,
+) {
+  const selected = (customerId ?? "").trim();
+  const general = lots.filter((lot) => !(lot.customerId ?? "").trim());
+  if (!selected) return general;
+  const owned = lots.filter(
+    (lot) => (lot.customerId ?? "").trim() === selected,
+  );
+  return owned.length > 0 ? owned : general;
+}
+
+type BtbBatchLot = BtbBatchStock;
+
+function btbBatchKey(lot: {
+  btbId: string;
+  jenis: "item" | "fg";
+  refId: string;
+  batchCustomer: string;
+  gudangId: string;
+}) {
+  return [
+    lot.btbId,
+    lot.jenis,
+    lot.refId,
+    normLotText(lot.batchCustomer),
+    lot.gudangId,
+  ].join("\u0001");
+}
+
+function addBtbBatchQty(lots: Map<string, BtbBatchLot>, incoming: BtbBatchLot) {
+  if (incoming.qty <= 0) return;
+  const key = btbBatchKey(incoming);
+  const current = lots.get(key);
+  if (current) {
+    current.qty += incoming.qty;
+    if (incoming.tanggal < current.tanggal) current.tanggal = incoming.tanggal;
+    return;
+  }
+  lots.set(key, { ...incoming, key, batchCustomer: normLotText(incoming.batchCustomer) });
+}
+
+function takeBtbBatchQty(
+  lots: Map<string, BtbBatchLot>,
+  match: (lot: BtbBatchLot) => boolean,
+  qty: number,
+) {
+  const ordered = [...lots.values()]
+    .filter((lot) => match(lot) && lot.qty > 0)
+    .sort(
+      (a, b) =>
+        a.tanggal.localeCompare(b.tanggal) || a.btbNo.localeCompare(b.btbNo),
+    );
+  const taken: { lot: BtbBatchLot; qty: number }[] = [];
+  let remaining = qty;
+  for (const lot of ordered) {
+    if (remaining <= 0) break;
+    const take = Math.min(lot.qty, remaining);
+    lot.qty -= take;
+    remaining -= take;
+    taken.push({ lot, qty: take });
+  }
+  return taken;
+}
+
+/**
+ * Sisa stok per No. BTB di tiap gudang.
+ * BKB, transfer, dan adjustment yang sudah disetujui mengurangi atau menambah lot itu.
+ * Transfer memindahkan lot yang sama ke gudang tujuan.
+ */
+export function listBtbBatchStock(input?: {
+  btbs?: Btb[];
+  bkbs?: Bkb[];
+  transfers?: TransferGudang[];
+  adjustments?: Adjustment[];
+  excludeTransferId?: string;
+  excludeBkbId?: string;
+  excludeAdjustmentId?: string;
+}): BtbBatchStock[] {
+  const docs = input?.btbs ?? btbs;
+  const bkbDocs = (input?.bkbs ?? bkbs).filter(
+    (doc) => doc.id !== input?.excludeBkbId,
+  );
+  const transferDocs = (input?.transfers ?? transfers).filter(
+    (doc) => doc.id !== input?.excludeTransferId,
+  );
+  const adjustmentDocs = (input?.adjustments ?? adjustments).filter(
+    (doc) => doc.id !== input?.excludeAdjustmentId,
+  );
+  const lots = new Map<string, BtbBatchLot>();
+
+  type BatchEvent =
+    | { at: string; rank: number; kind: "btb"; doc: Btb }
+    | { at: string; rank: number; kind: "bkb"; doc: Bkb }
+    | { at: string; rank: number; kind: "transfer"; doc: TransferGudang }
+    | { at: string; rank: number; kind: "adjustment"; doc: Adjustment };
+
+  function eventAt(date: string, createdAt?: string) {
+    if (createdAt) return createdAt;
+    return date ? `${date}T00:00:00` : "";
+  }
+
+  const events: BatchEvent[] = [
+    ...docs.map((doc) => ({
+      at: eventAt(doc.tanggalTerima, doc.createdAt),
+      rank: 0,
+      kind: "btb" as const,
+      doc,
+    })),
+    ...transferDocs.map((doc) => ({
+      at: eventAt(doc.tanggal, doc.createdAt),
+      rank: 1,
+      kind: "transfer" as const,
+      doc,
+    })),
+    ...bkbDocs.map((doc) => ({
+      at: eventAt(doc.tanggalKeluar, doc.createdAt),
+      rank: 2,
+      kind: "bkb" as const,
+      doc,
+    })),
+    ...adjustmentDocs.map((doc) => ({
+      at: eventAt(doc.tanggal, doc.createdAt),
+      rank: 3,
+      kind: "adjustment" as const,
+      doc,
+    })),
+  ];
+  events.sort((a, b) => a.at.localeCompare(b.at) || a.rank - b.rank);
+
+  for (const event of events) {
+    if (event.kind === "btb") {
+      const btb = event.doc;
+      for (const jenis of ["item", "fg"] as const) {
+        const lines = jenis === "item" ? (btb.items ?? []) : (btb.fgs ?? []);
+        lines.forEach((line) => {
+          if (isTransferGeneratedBtbLine(line.keterangan)) return;
+          const refId = "itemId" in line ? line.itemId : line.fgId;
+          addBtbBatchQty(lots, {
+            key: "",
+            btbId: btb.id,
+            btbNo: btb.no,
+            jenis,
+            refId,
+            customerId: (btb.customerId ?? "").trim(),
+            batchCustomer: line.batchCustomer,
+            gudangId: line.gudangId,
+            qty: Math.max(0, Number(line.qty) || 0),
+            tanggal: btb.tanggalTerima,
+          });
+        });
+      }
+      continue;
+    }
+
+    if (event.kind === "bkb") {
+      for (const jenis of ["item", "fg"] as const) {
+        for (const ref of bkbLotRefs(event.doc, jenis)) {
+          if (ref.qty <= 0) continue;
+          const btbId = resolveIssuedBtbId(ref, docs);
+          if (!btbId) continue;
+          takeBtbBatchQty(
+            lots,
+            (lot) =>
+              lot.btbId === btbId &&
+              lot.jenis === jenis &&
+              lot.refId === ref.refId &&
+              lot.gudangId === ref.gudangId &&
+              lot.batchCustomer === normLotText(ref.batchCustomer),
+            ref.qty,
+          );
+        }
+      }
+      continue;
+    }
+
+    if (event.kind === "adjustment") {
+      if (!isApprovedAdjustment(event.doc.status)) continue;
+      for (const line of event.doc.lines ?? []) {
+        const specific = Boolean(line.btbId && line.gudangId);
+        if (line.out > 0) {
+          const taken = takeBtbBatchQty(
+            lots,
+            (lot) =>
+              lot.jenis === line.jenis &&
+              lot.refId === line.refId &&
+              (specific
+                ? lot.btbId === line.btbId &&
+                  lot.gudangId === line.gudangId &&
+                  (!line.batchCustomer ||
+                    lot.batchCustomer === normLotText(line.batchCustomer))
+                : true),
+            line.out,
+          );
+          void taken;
+        }
+        if (line.in > 0 && specific && line.btbId && line.gudangId) {
+          const host = [...lots.values()].find(
+            (lot) => lot.btbId === line.btbId && lot.jenis === line.jenis,
+          );
+          const sourceDoc = docs.find((doc) => doc.id === line.btbId);
+          addBtbBatchQty(lots, {
+            key: "",
+            btbId: line.btbId,
+            btbNo: line.btbNo || host?.btbNo || "",
+            jenis: line.jenis,
+            refId: line.refId,
+            customerId: host?.customerId || (sourceDoc?.customerId ?? "").trim(),
+            batchCustomer: line.batchCustomer || host?.batchCustomer || "",
+            gudangId: line.gudangId,
+            qty: line.in,
+            tanggal: event.doc.tanggal,
+          });
+        }
+      }
+      continue;
+    }
+
+    for (const line of event.doc.lines ?? []) {
+      if (line.qty <= 0 || line.dariGudangId === line.keGudangId) continue;
+      const specific = Boolean(line.btbId);
+      const taken = takeBtbBatchQty(
+        lots,
+        (lot) =>
+          lot.jenis === line.jenis &&
+          lot.refId === line.refId &&
+          lot.gudangId === line.dariGudangId &&
+          (specific
+            ? lot.btbId === line.btbId &&
+              (!line.batchCustomer ||
+                lot.batchCustomer === normLotText(line.batchCustomer))
+            : true),
+        line.qty,
+      );
+      for (const part of taken) {
+        addBtbBatchQty(lots, {
+          ...part.lot,
+          key: "",
+          gudangId: line.keGudangId,
+          qty: part.qty,
+          tanggal: event.doc.tanggal,
+        });
+      }
+    }
+  }
+
+  return [...lots.values()].filter((lot) => lot.qty > 0);
+}
+
+/** Tulis ulang qtySisa dari transaksi, bukan dari penambahan/pengurangan bertahap. */
+export function syncBtbQtySisa(docs: Btb[], bkbDocs: Bkb[]): Btb[] {
+  const remaining = remainingQtyByBtbLine(docs, bkbDocs);
+  return docs.map((btb) => ({
+    ...btb,
+    items: (btb.items ?? []).map((line, index) => ({
+      ...line,
+      qtySisa: remaining.get(btbLineKey(btb.id, "item", index)) ?? 0,
+    })),
+    fgs: (btb.fgs ?? []).map((line, index) => ({
+      ...line,
+      qtySisa: remaining.get(btbLineKey(btb.id, "fg", index)) ?? 0,
+    })),
+  }));
+}
+
 /** Turunan batch masuk material dari baris BTB (mock). */
 export function getBatchesForItem(
   itemId: string,
   docs: Btb[] = btbs,
+  bkbDocs: Bkb[] = bkbs,
 ): MaterialBatch[] {
+  const remaining = remainingQtyByBtbLine(docs, bkbDocs);
   const rows: MaterialBatch[] = [];
   for (const btb of docs) {
     btb.items.forEach((line, idx) => {
@@ -1111,7 +1575,7 @@ export function getBatchesForItem(
         itemId,
         batchCustomer: line.batchCustomer,
         qtyMasuk: line.qty,
-        qtySisa: line.qtySisa,
+        qtySisa: remaining.get(btbLineKey(btb.id, "item", idx)) ?? 0,
         satuan: line.satuan,
         tanggalMasuk: btb.tanggalTerima,
         sumberBtbId: btb.id,

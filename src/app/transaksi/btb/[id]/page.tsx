@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
-import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
+import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
 import { BackLink, PageHeader } from "@/components/shared/page-header";
 import { DetailField, DocLink } from "@/components/shared/detail-field";
 import { DocLineViewTable } from "@/components/shared/doc-line-table";
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { SearchableCombobox } from "@/components/ui/combobox";
 import {
   Select,
   SelectContent,
@@ -25,7 +26,10 @@ import {
   formatDocNo,
   findItem,
   findFinishGood,
+  btbBatchName,
+  findBtbDocument,
   withoutTransferBtbLines,
+  syncBtbQtySisa,
 } from "@/lib/mock/data";
 import { JENIS_TRANSAKSI_BTB } from "@/lib/jenis-transaksi";
 import { useAuthStore, useDataStore } from "@/lib/store";
@@ -41,11 +45,13 @@ const JENIS_OPTIONS = JENIS_TRANSAKSI_BTB.map((o) => ({
 }));
 
 export default function BtbFormPage() {
-  const params = useParams<{ id: string }>();
-  const id = params?.id ?? "";
+  const params = useParams<{ id: string | string[] }>();
+  const rawId = Array.isArray(params?.id) ? params.id[0] : params?.id;
+  const id = rawId ?? "";
   const isNew = id === "baru";
   const router = useRouter();
   const btbs = useDataStore((s) => s.btbs);
+  const bkbs = useDataStore((s) => s.bkbs);
   const items = useDataStore((s) => s.items);
   const finishGoods = useDataStore((s) => s.finishGoods);
   const customers = useDataStore((s) => s.customers);
@@ -55,11 +61,10 @@ export default function BtbFormPage() {
   const user = useAuthStore((s) => s.currentUser);
   const { askConfirm, confirmDialog } = useConfirmDialog();
 
-  const existing = isNew
-    ? undefined
-    : btbs
-        .map(withoutTransferBtbLines)
-        .find((b) => b.id === id);
+  const [lookupSettled, setLookupSettled] = useState(false);
+  const [syncedId, setSyncedId] = useState<string | null>(null);
+  const found = isNew ? undefined : findBtbDocument(btbs, id);
+  const existing = found ? withoutTransferBtbLines(found) : undefined;
   const [editing, setEditing] = useState(false);
   const isView = !isNew && !editing;
   const notFound = !isNew && !existing;
@@ -72,6 +77,7 @@ export default function BtbFormPage() {
   );
   const [noPo, setNoPo] = useState(existing?.noPo ?? "");
   const [noSpk, setNoSpk] = useState(existing?.noSpk ?? "");
+  const [batch, setBatch] = useState(isNew ? "" : btbBatchName(existing));
   const [keterangan, setKeterangan] = useState(existing?.keterangan ?? "");
   const [lineItems, setLineItems] = useState<BtbLineItem[]>(
     existing?.items ?? [],
@@ -128,12 +134,72 @@ export default function BtbFormPage() {
     [gudangList],
   );
 
+  useEffect(() => {
+    if (isNew) {
+      setLookupSettled(true);
+      return;
+    }
+    if (!id) {
+      setLookupSettled(false);
+      return;
+    }
+    let cancelled = false;
+    setLookupSettled(false);
+    void (async () => {
+      if (!useDataStore.persist.hasHydrated()) {
+        await new Promise<void>((resolve) => {
+          const unsubscribe = useDataStore.persist.onFinishHydration(() => {
+            unsubscribe();
+            resolve();
+          });
+          if (useDataStore.persist.hasHydrated()) {
+            unsubscribe();
+            resolve();
+          }
+        });
+      }
+      if (!findBtbDocument(useDataStore.getState().btbs, id)) {
+        await useDataStore.persist.rehydrate();
+      }
+      if (!cancelled) setLookupSettled(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, isNew]);
+
+  useEffect(() => {
+    if (!lookupSettled || isNew || !existing) return;
+    if (syncedId === existing.id) return;
+    setTanggal(existing.tanggalTerima);
+    setJenisId(existing.jenisTransaksiId);
+    setNoPo(existing.noPo ?? "");
+    setNoSpk(existing.noSpk ?? "");
+    setBatch(btbBatchName(existing));
+    setKeterangan(existing.keterangan ?? "");
+    setCustomerId(existing.customerId ?? customers[0]?.id ?? "");
+    setLineItems(existing.items ?? []);
+    setLineFgs(existing.fgs ?? []);
+    setFotoBukti(
+      (existing.fotoBukti ?? []).map((dataUrl, i) => ({
+        id: `foto-${i}`,
+        name: `bukti-${i + 1}.jpg`,
+        dataUrl,
+      })),
+    );
+    setSyncedId(existing.id);
+    if (id !== existing.id) {
+      router.replace(`/transaksi/btb/${existing.id}`);
+    }
+  }, [customers, existing, id, isNew, lookupSettled, router, syncedId]);
+
   function resetFromExisting() {
     if (!existing) return;
     setTanggal(existing.tanggalTerima);
     setJenisId(existing.jenisTransaksiId);
     setNoPo(existing.noPo ?? "");
     setNoSpk(existing.noSpk ?? "");
+    setBatch(btbBatchName(existing));
     setKeterangan(existing.keterangan ?? "");
     setCustomerId(existing.customerId ?? customers[0]?.id ?? "");
     setLineItems(existing.items ?? []);
@@ -154,7 +220,7 @@ export default function BtbFormPage() {
       ...lineItems,
       {
         itemId: item.id,
-        batchCustomer: item.batchCustomer,
+        batchCustomer: batch,
         qty: 0,
         satuan: item.uom1,
         gudangId: gudangList[0]?.id ?? "",
@@ -171,7 +237,7 @@ export default function BtbFormPage() {
       ...lineFgs,
       {
         fgId: fg.id,
-        batchCustomer: fg.batchCustomer,
+        batchCustomer: batch,
         qty: 0,
         satuan: fg.uom1,
         gudangId:
@@ -191,6 +257,7 @@ export default function BtbFormPage() {
       toast.error("Minimal satu baris Material atau FG");
       return;
     }
+    const batchName = batch.trim();
 
     const no = existing?.no ?? formatDocNo("BTB", tanggal, btbs.length + 1);
     const payload: Btb = {
@@ -201,20 +268,22 @@ export default function BtbFormPage() {
       customerId,
       noPo,
       noSpk,
+      batch: batchName,
       keterangan,
       createdAt: existing?.createdAt ?? new Date().toISOString(),
       fotoBukti: fotoBukti.map((f) => f.dataUrl),
-      items: lineItems.map((l) => ({
-        ...l,
-        qtySisa: isNew ? l.qty : l.qtySisa,
+      items: lineItems.map((line) => ({
+        ...line,
+        batchCustomer: batchName,
       })),
-      fgs: lineFgs.map((l) => ({
-        ...l,
-        qtySisa: isNew ? l.qty : l.qtySisa,
+      fgs: lineFgs.map((line) => ({
+        ...line,
+        batchCustomer: batchName,
       })),
     };
+    const [synced] = syncBtbQtySisa([payload], bkbs);
 
-    upsertBtb(payload);
+    upsertBtb(synced ?? payload);
     addLog({
       waktu: new Date().toISOString(),
       userId: user?.id ?? "local",
@@ -230,6 +299,30 @@ export default function BtbFormPage() {
     } else {
       setEditing(false);
     }
+  }
+
+  if (!isNew && (!id || !lookupSettled)) {
+    return (
+      <div>
+        <BackLink href="/transaksi/btb" />
+        <PageHeader
+          title="Memuat BTB"
+          description="Mengambil dokumen dari data yang tersimpan."
+        />
+      </div>
+    );
+  }
+
+  if (!isNew && existing && syncedId !== existing.id) {
+    return (
+      <div>
+        <BackLink href="/transaksi/btb" />
+        <PageHeader
+          title="Memuat BTB"
+          description="Mengambil dokumen dari data yang tersimpan."
+        />
+      </div>
+    );
   }
 
   if (notFound) {
@@ -322,6 +415,7 @@ export default function BtbFormPage() {
           />
           <DetailField label="No PO" value={noPo} />
           <DetailField label="No SPK" value={noSpk} />
+          <DetailField label="Batch" value={batch || "-"} />
           <DetailField
             className="sm:col-span-2 lg:col-span-4"
             label="Keterangan"
@@ -371,22 +465,14 @@ export default function BtbFormPage() {
           </div>
           <div className="space-y-1.5">
             <Label>Customer</Label>
-            <Select
-              value={customerId}
-              onValueChange={(v) => setCustomerId(v ?? "")}
+            <SearchableCombobox
               items={customerSelectItems}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih customer" />
-              </SelectTrigger>
-              <SelectContent>
-                {customers.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.nama}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              value={customerId}
+              onValueChange={(next) => setCustomerId(next ?? "")}
+              placeholder="Cari nama customer..."
+              emptyText="Tidak ada customer yang cocok"
+              itemNoun="customer"
+            />
           </div>
           <div className="space-y-1.5">
             <Label>No PO</Label>
@@ -395,6 +481,23 @@ export default function BtbFormPage() {
           <div className="space-y-1.5">
             <Label>No SPK</Label>
             <Input value={noSpk} onChange={(e) => setNoSpk(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Batch</Label>
+            <Input
+              value={batch}
+              placeholder="Masukkan batch..."
+              onChange={(e) => {
+                const value = e.target.value;
+                setBatch(value);
+                setLineItems((lines) =>
+                  lines.map((line) => ({ ...line, batchCustomer: value })),
+                );
+                setLineFgs((lines) =>
+                  lines.map((line) => ({ ...line, batchCustomer: value })),
+                );
+              }}
+            />
           </div>
           <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
             <Label>Keterangan</Label>
@@ -447,58 +550,36 @@ export default function BtbFormPage() {
             lineItems.map((line, idx) => (
               <div
                 key={idx}
-                className="grid gap-2 rounded-lg border p-3 sm:grid-cols-6"
+                className="grid gap-2 rounded-lg border p-3 sm:grid-cols-5"
               >
                 <div className="sm:col-span-2">
                   <Label className="text-xs">Kode & Nama Material</Label>
-                  <Select
-                    value={line.itemId}
+                  <SearchableCombobox
                     items={itemSelectItems}
-                    onValueChange={(v) => {
-                      const vv = v ?? "";
-                      const item = findItem(vv, items);
-                      const next = [...lineItems];
-                      next[idx] = {
+                    value={line.itemId}
+                    onValueChange={(next) => {
+                      const itemId = next ?? "";
+                      const item = findItem(itemId, items);
+                      const nextLines = [...lineItems];
+                      nextLines[idx] = {
                         ...line,
-                        itemId: vv,
-                        batchCustomer: item?.batchCustomer ?? "",
+                        itemId,
+                        batchCustomer: batch,
                         satuan: item?.uom1 ?? "",
                       };
-                      setLineItems(next);
+                      setLineItems(nextLines);
                     }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih material">
-                        {(() => {
-                          const item = findItem(line.itemId, items);
-                          return item ? (
-                            <ItemNameWithType jenis="item">
-                              {formatKodeNama(item.kode, item.nama)}
-                            </ItemNameWithType>
-                          ) : undefined;
-                        })()}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {items.map((i) => (
-                        <SelectItem key={i.id} value={i.id}>
-                          <ItemNameWithType jenis="item">
-                            {i.kode} - {i.nama}
-                          </ItemNameWithType>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Batch Customer</Label>
-                  <Input
-                    value={line.batchCustomer}
-                    onChange={(e) => {
-                      const next = [...lineItems];
-                      next[idx] = { ...line, batchCustomer: e.target.value };
-                      setLineItems(next);
-                    }}
+                    renderItem={(item) => (
+                      <ItemNameWithType jenis="item" className="w-full">
+                        {item.label}
+                      </ItemNameWithType>
+                    )}
+                    endAdornment={
+                      line.itemId ? <ItemTypeBadge jenis="item" /> : null
+                    }
+                    placeholder="Cari material..."
+                    emptyText="Tidak ada material yang cocok"
+                    itemNoun="material"
                   />
                 </div>
                 <div>
@@ -515,27 +596,19 @@ export default function BtbFormPage() {
                 </div>
                 <div>
                   <Label className="text-xs">Gudang</Label>
-                  <Select
-                    value={line.gudangId}
+                  <SearchableCombobox
                     items={gudangSelectItems}
-                    onValueChange={(v) => {
-                      const vv = v ?? "";
-                      const next = [...lineItems];
-                      next[idx] = { ...line, gudangId: vv };
-                      setLineItems(next);
+                    value={line.gudangId}
+                    onValueChange={(next) => {
+                      const gudangId = next ?? "";
+                      const nextLines = [...lineItems];
+                      nextLines[idx] = { ...line, gudangId };
+                      setLineItems(nextLines);
                     }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih gudang" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {gudangList.map((g) => (
-                        <SelectItem key={g.id} value={g.id}>
-                          {g.nama}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Cari gudang..."
+                    emptyText="Tidak ada gudang yang cocok"
+                    itemNoun="gudang"
+                  />
                 </div>
                 <div className="flex items-end gap-2">
                   <div className="flex-1">
@@ -608,58 +681,36 @@ export default function BtbFormPage() {
             lineFgs.map((line, idx) => (
               <div
                 key={idx}
-                className="grid gap-2 rounded-lg border p-3 sm:grid-cols-6"
+                className="grid gap-2 rounded-lg border p-3 sm:grid-cols-5"
               >
                 <div className="sm:col-span-2">
                   <Label className="text-xs">Kode & Nama FG</Label>
-                  <Select
-                    value={line.fgId}
+                  <SearchableCombobox
                     items={fgSelectItems}
-                    onValueChange={(v) => {
-                      const vv = v ?? "";
-                      const fg = findFinishGood(vv, finishGoods);
-                      const next = [...lineFgs];
-                      next[idx] = {
+                    value={line.fgId}
+                    onValueChange={(next) => {
+                      const fgId = next ?? "";
+                      const fg = findFinishGood(fgId, finishGoods);
+                      const nextLines = [...lineFgs];
+                      nextLines[idx] = {
                         ...line,
-                        fgId: vv,
-                        batchCustomer: fg?.batchCustomer ?? "",
+                        fgId,
+                        batchCustomer: batch,
                         satuan: fg?.uom1 ?? "",
                       };
-                      setLineFgs(next);
+                      setLineFgs(nextLines);
                     }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih FG">
-                        {(() => {
-                          const fg = findFinishGood(line.fgId, finishGoods);
-                          return fg ? (
-                            <ItemNameWithType jenis="fg">
-                              {formatKodeNama(fg.kode, fg.nama)}
-                            </ItemNameWithType>
-                          ) : undefined;
-                        })()}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {finishGoods.map((f) => (
-                        <SelectItem key={f.id} value={f.id}>
-                          <ItemNameWithType jenis="fg">
-                            {f.kode} - {f.nama}
-                          </ItemNameWithType>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Batch Customer</Label>
-                  <Input
-                    value={line.batchCustomer}
-                    onChange={(e) => {
-                      const next = [...lineFgs];
-                      next[idx] = { ...line, batchCustomer: e.target.value };
-                      setLineFgs(next);
-                    }}
+                    renderItem={(item) => (
+                      <ItemNameWithType jenis="fg" className="w-full">
+                        {item.label}
+                      </ItemNameWithType>
+                    )}
+                    endAdornment={
+                      line.fgId ? <ItemTypeBadge jenis="fg" /> : null
+                    }
+                    placeholder="Cari finish good..."
+                    emptyText="Tidak ada finish good yang cocok"
+                    itemNoun="finish good"
                   />
                 </div>
                 <div>
@@ -676,27 +727,19 @@ export default function BtbFormPage() {
                 </div>
                 <div>
                   <Label className="text-xs">Gudang</Label>
-                  <Select
-                    value={line.gudangId}
+                  <SearchableCombobox
                     items={gudangSelectItems}
-                    onValueChange={(v) => {
-                      const vv = v ?? "";
-                      const next = [...lineFgs];
-                      next[idx] = { ...line, gudangId: vv };
-                      setLineFgs(next);
+                    value={line.gudangId}
+                    onValueChange={(next) => {
+                      const gudangId = next ?? "";
+                      const nextLines = [...lineFgs];
+                      nextLines[idx] = { ...line, gudangId };
+                      setLineFgs(nextLines);
                     }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih gudang" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {gudangList.map((g) => (
-                        <SelectItem key={g.id} value={g.id}>
-                          {g.nama}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Cari gudang..."
+                    emptyText="Tidak ada gudang yang cocok"
+                    itemNoun="gudang"
+                  />
                 </div>
                 <div className="flex items-end gap-2">
                   <div className="flex-1">

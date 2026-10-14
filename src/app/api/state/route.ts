@@ -5,6 +5,7 @@ import {
   type PersistedData,
 } from "@/server/db";
 import { currentUser } from "@/server/session";
+import { syncBtbQtySisa } from "@/lib/mock/data";
 import type { User } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -17,11 +18,14 @@ export async function GET() {
   if (!user) {
     return Response.json({ error: "Belum login" }, { status: 401 });
   }
-  return Response.json({
-    state: await loadState(),
-    version: VERSION,
-    revision: await readRevision(),
-  });
+  return Response.json(
+    {
+      state: await loadState(),
+      version: VERSION,
+      revision: await readRevision(),
+    },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 export async function PUT(request: Request) {
@@ -95,7 +99,7 @@ function normalizeState(state: PersistedData): PersistedData {
     boms: state.boms ?? [],
     gudangList: state.gudangList ?? [],
     jenisTransaksiList: state.jenisTransaksiList ?? [],
-    btbs: state.btbs ?? [],
+    btbs: syncBtbQtySisa(state.btbs ?? [], state.bkbs ?? []),
     bkbs: state.bkbs ?? [],
     stockOpnames: state.stockOpnames ?? [],
     adjustments: state.adjustments ?? [],
