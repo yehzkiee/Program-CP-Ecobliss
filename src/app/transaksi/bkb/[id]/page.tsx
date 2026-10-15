@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  formatBtbLotLabel,
   formatDocNo,
   getLatestBomRevision,
   findItem,
@@ -36,6 +35,7 @@ import type { Bkb, BkbLineFg, BkbLineItem } from "@/lib/types";
 import { todayISO, uid, formatDateID, formatDateShort, formatQty, formatKodeNama } from "@/lib/utils";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { FileUpload, type UploadedFile } from "@/components/shared/file-upload";
+import { batchLabel, formatBatchOptionLabel } from "@/lib/batches";
 
 /** Opsi dropdown Jenis Transaksi BKB — `value` disimpan sebagai jenisTransaksiId. */
 const JENIS_OPTIONS = JENIS_TRANSAKSI_BKB.map((o) => ({
@@ -56,18 +56,6 @@ type BtbSourceOption = {
   gudangId: string;
   qtySisa: number;
 };
-
-function formatBatchStockLabel(
-  btbNo: string,
-  batch: string,
-  qtySisa: number,
-  gudangName?: string,
-) {
-  return formatBtbLotLabel(
-    { btbNo, batchCustomer: batch, qty: qtySisa },
-    gudangName,
-  );
-}
 
 function batchGroupKey(refId: string, batch: string, gudangId: string) {
   return `${refId}::${batch.trim()}::${gudangId}`;
@@ -673,25 +661,11 @@ export default function BkbFormPage() {
     );
   }
 
-  function batchOptionLabel<
-    T extends {
-      batchCustomer: string;
-      gudangId: string;
-      qtySisa: number;
-      lots: { btbNo: string }[];
-    },
-  >(group: T, groups: T[]) {
-    const name = group.batchCustomer.trim();
-    const sharedName =
-      groups.filter((row) => row.batchCustomer.trim() === name).length > 1;
-    const btbNo = [
-      ...new Set(group.lots.map((lot) => lot.btbNo.trim()).filter(Boolean)),
-    ].join(", ");
-    return formatBatchStockLabel(
-      btbNo,
-      group.batchCustomer,
+  function batchOptionLabel(group: { batchCustomer: string; gudangId: string; qtySisa: number }) {
+    return formatBatchOptionLabel(
+      batchLabel(group.batchCustomer, btbs),
+      gudangMap[group.gudangId]?.nama ?? "",
       group.qtySisa,
-      sharedName ? gudangMap[group.gudangId]?.nama : undefined,
     );
   }
 
@@ -1078,7 +1052,10 @@ export default function BkbFormPage() {
                     );
                   })()}
                 />
-                <DetailField label="Batch" value={line.batchCustomer || "-"} />
+                <DetailField
+                  label="Batch"
+                  value={batchLabel(line.batchCustomer, btbs) || "-"}
+                />
                 <DetailField
                   label="Qty"
                   value={formatQty(line.qty, line.satuan)}
@@ -1142,10 +1119,7 @@ export default function BkbFormPage() {
                   <SearchableCombobox
                     items={groupsForItem(line.itemId).map((group) => ({
                       value: group.key,
-                      label: batchOptionLabel(
-                        group,
-                        groupsForItem(line.itemId),
-                      ),
+                      label: batchOptionLabel(group),
                     }))}
                     value={resolveMaterialGroup(line)?.key ?? ""}
                     onValueChange={(next) => {
@@ -1166,7 +1140,7 @@ export default function BkbFormPage() {
                       };
                       setLineItems(nextLines);
                     }}
-                    placeholder="Masukkan batch..."
+                    placeholder="Pilih batch"
                     emptyText="Tidak ada batch untuk customer ini"
                     itemNoun="batch"
                   />
@@ -1261,7 +1235,10 @@ export default function BkbFormPage() {
                     );
                   })()}
                 />
-                <DetailField label="Batch" value={line.batchCustomer || "-"} />
+                <DetailField
+                  label="Batch"
+                  value={batchLabel(line.batchCustomer, btbs) || "-"}
+                />
                 <DetailField
                   label="Qty"
                   value={formatQty(line.qty, line.satuan)}
@@ -1325,7 +1302,7 @@ export default function BkbFormPage() {
                   <SearchableCombobox
                     items={groupsForFg(line.fgId).map((group) => ({
                       value: group.key,
-                      label: batchOptionLabel(group, groupsForFg(line.fgId)),
+                      label: batchOptionLabel(group),
                     }))}
                     value={resolveFgGroup(line)?.key ?? ""}
                     onValueChange={(next) => {
@@ -1346,7 +1323,7 @@ export default function BkbFormPage() {
                       };
                       setLineFgs(nextLines);
                     }}
-                    placeholder="Masukkan batch..."
+                    placeholder="Pilih batch"
                     emptyText="Tidak ada batch untuk customer ini"
                     itemNoun="batch"
                   />

@@ -37,6 +37,15 @@ import type { Btb, BtbLineFg, BtbLineItem } from "@/lib/types";
 import { formatDateID, todayISO, uid, formatQty, formatKodeNama } from "@/lib/utils";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { FileUpload, type UploadedFile } from "@/components/shared/file-upload";
+import { BatchDropdown } from "@/components/shared/batch-dropdown";
+import {
+  batchLabel,
+  collectBatches,
+  listLatestBatches,
+  nextBatchLabel,
+  type NamedBatch,
+} from "@/lib/batches";
+import { withBasePath } from "@/lib/base-path";
 
 /** Opsi dropdown Jenis Transaksi BTB — `value` disimpan sebagai jenisTransaksiId. */
 const JENIS_OPTIONS = JENIS_TRANSAKSI_BTB.map((o) => ({
@@ -133,6 +142,43 @@ export default function BtbFormPage() {
     () => gudangList.map((g) => ({ value: g.id, label: g.nama })),
     [gudangList],
   );
+  const fallbackBatches = useMemo(() => listLatestBatches(btbs), [btbs]);
+  const [serverBatches, setServerBatches] = useState<NamedBatch[] | null>(null);
+  const batchChoices = useMemo(() => {
+    const source = (serverBatches ?? fallbackBatches).slice(0, 3);
+    return source.map((row) => ({
+      ...row,
+      label: batchLabel(row.value, btbs) || row.label,
+    }));
+  }, [btbs, fallbackBatches, serverBatches]);
+  const batchDisplay = batch.trim() ? batchLabel(batch, btbs) || "Batch" : "";
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(withBasePath("/api/batches/latest"), {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const body = (await res.json()) as { batches?: NamedBatch[] };
+        const rows = Array.isArray(body.batches)
+          ? body.batches.filter(
+              (row) =>
+                row &&
+                typeof row.value === "string" &&
+                typeof row.label === "string",
+            )
+          : [];
+        if (!cancelled) setServerBatches(rows.slice(0, 3));
+      } catch {
+        if (!cancelled) setServerBatches(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [btbs]);
 
   useEffect(() => {
     if (isNew) {
@@ -211,6 +257,27 @@ export default function BtbFormPage() {
         dataUrl,
       })),
     );
+  }
+
+  function applyBatch(value: string) {
+    setBatch(value);
+    setLineItems((lines) =>
+      lines.map((line) => ({ ...line, batchCustomer: value })),
+    );
+    setLineFgs((lines) =>
+      lines.map((line) => ({ ...line, batchCustomer: value })),
+    );
+  }
+
+  function createBatch(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const existing = collectBatches(btbs).find(
+      (row) =>
+        row.label.toLowerCase() === trimmed.toLowerCase() ||
+        row.value.toLowerCase() === trimmed.toLowerCase(),
+    );
+    applyBatch(existing?.value ?? trimmed);
   }
 
   function addItemLine() {
@@ -415,7 +482,7 @@ export default function BtbFormPage() {
           />
           <DetailField label="No PO" value={noPo} />
           <DetailField label="No SPK" value={noSpk} />
-          <DetailField label="Batch" value={batch || "-"} />
+          <DetailField label="Batch" value={batchDisplay || "-"} />
           <DetailField
             className="sm:col-span-2 lg:col-span-4"
             label="Keterangan"
@@ -484,19 +551,13 @@ export default function BtbFormPage() {
           </div>
           <div className="space-y-1.5">
             <Label>Batch</Label>
-            <Input
+            <BatchDropdown
+              options={batchChoices}
               value={batch}
-              placeholder="Masukkan batch..."
-              onChange={(e) => {
-                const value = e.target.value;
-                setBatch(value);
-                setLineItems((lines) =>
-                  lines.map((line) => ({ ...line, batchCustomer: value })),
-                );
-                setLineFgs((lines) =>
-                  lines.map((line) => ({ ...line, batchCustomer: value })),
-                );
-              }}
+              label={batchDisplay}
+              suggestedName={nextBatchLabel(btbs)}
+              onValueChange={applyBatch}
+              onCreate={createBatch}
             />
           </div>
           <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
@@ -537,7 +598,7 @@ export default function BtbFormPage() {
                     ) : (
                       line.itemId
                     ),
-                    batch: line.batchCustomer,
+                    batch: batchLabel(line.batchCustomer, btbs) || "-",
                     qty: formatQty(line.qty, line.satuan),
                     gudang:
                       gudangMap[line.gudangId]?.nama ?? line.gudangId,
@@ -668,7 +729,7 @@ export default function BtbFormPage() {
                     ) : (
                       line.fgId
                     ),
-                    batch: line.batchCustomer,
+                    batch: batchLabel(line.batchCustomer, btbs) || "-",
                     qty: formatQty(line.qty, line.satuan),
                     gudang:
                       gudangMap[line.gudangId]?.nama ?? line.gudangId,

@@ -755,6 +755,27 @@ export async function logoutTokenMysql(token: string | undefined | null) {
   await getPool().query("DELETE FROM sessions WHERE token = ?", [token]);
 }
 
+export async function readLatestBatchesMysql(limit = 3) {
+  await ensureMysql();
+  const safe = Math.min(50, Math.max(1, Math.trunc(limit) || 3));
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT batch_customer AS value, MAX(waktu) AS lastUsedAt
+     FROM stock_ledger
+     WHERE doc_type = 'btb'
+       AND arah = 'in'
+       AND TRIM(batch_customer) <> ''
+     GROUP BY batch_customer
+     ORDER BY MAX(waktu) DESC, batch_customer ASC
+     LIMIT ${safe}`,
+  );
+  return rows
+    .map((row) => ({
+      value: String(row.value ?? "").trim(),
+      lastUsedAt: String(row.lastUsedAt ?? ""),
+    }))
+    .filter((row) => row.value !== "");
+}
+
 export async function readStockMysql() {
   await ensureMysql();
   const db = getPool();

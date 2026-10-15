@@ -7,6 +7,7 @@ import {
   loadStateMysql,
   loginUserMysql,
   logoutTokenMysql,
+  readLatestBatchesMysql,
   readRevisionMysql,
   readStockMysql,
   replacePersistedStateMysql,
@@ -894,6 +895,50 @@ export async function readStock() {
     return readStockMysql();
   }
   return readStockSqlite();
+}
+
+export type LatestBatchKey = {
+  value: string;
+  lastUsedAt: string;
+};
+
+/** Tiga batch penerimaan terakhir, diurutkan dari pemakaian paling baru. */
+export async function readLatestBatchKeys(
+  limit = 3,
+): Promise<LatestBatchKey[]> {
+  if (pakaiMysql()) {
+    await ensureMysql();
+    return readLatestBatchesMysql(limit);
+  }
+  return readLatestBatchKeysSqlite(limit);
+}
+
+function latestBatchSql(limit: number) {
+  const safe = Math.min(50, Math.max(1, Math.trunc(limit) || 3));
+  return `
+    SELECT batch_customer AS value, MAX(waktu) AS lastUsedAt
+    FROM stock_ledger
+    WHERE doc_type = 'btb'
+      AND arah = 'in'
+      AND TRIM(batch_customer) <> ''
+    GROUP BY batch_customer
+    ORDER BY MAX(waktu) DESC, batch_customer ASC
+    LIMIT ${safe}
+  `;
+}
+
+function readLatestBatchKeysSqlite(limit: number): LatestBatchKey[] {
+  const database = openDatabase();
+  const rows = database.prepare(latestBatchSql(limit)).all() as {
+    value: string;
+    lastUsedAt: string;
+  }[];
+  return rows
+    .map((row) => ({
+      value: String(row.value ?? "").trim(),
+      lastUsedAt: String(row.lastUsedAt ?? ""),
+    }))
+    .filter((row) => row.value !== "");
 }
 
 function readStockSqlite() {
