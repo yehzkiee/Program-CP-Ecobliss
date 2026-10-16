@@ -46,24 +46,27 @@ export const colGroupAdjustmentLines = [
   "w-[72px]",
   "w-[110px]",
   "w-auto",
-  "w-[220px]",
+  "w-[420px]",
   "w-[72px]",
   "w-[72px]",
   "w-[72px]",
   "w-[140px]",
 ] as const;
 
-/** Stock opname worksheet (with batch column). */
+/** Stock opname worksheet (with batch column).
+ * Widths are explicit so table-fixed does not collapse Nama into Batch.
+ * Jenis | Kode | Nama | Batch | Customer | Gudang | Qty Sistem | Qty Aktual | Selisih
+ */
 export const colGroupOpnameWithBatch = [
-  "w-[72px]",
-  "w-[120px]",
-  "w-auto",
-  "w-[120px]",
+  "w-[132px]",
+  "w-[124px]",
+  "w-[200px]",
+  "w-[300px]",
+  "w-[150px]",
   "w-[140px]",
-  "w-[120px]",
-  "w-[96px]",
-  "w-[96px]",
-  "w-[96px]",
+  "w-[108px]",
+  "w-[128px]",
+  "w-[92px]",
 ] as const;
 
 /** Stock opname worksheet (without batch column). */

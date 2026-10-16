@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { CustomerFilterCombobox } from "@/components/shared/customer-filter-combobox";
 import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { ResponsiveInput } from "@/components/ui/responsive-input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -30,6 +30,70 @@ import { uid } from "@/lib/utils";
 
 const empty: Customer = { id: "", kode: "", nama: "" };
 
+type CreateDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (row: Customer) => void;
+};
+
+function CustomerCreateDialog({
+  open,
+  onOpenChange,
+  onSave,
+}: CreateDialogProps) {
+  const [form, setForm] = useState<Customer>(empty);
+
+  useEffect(() => {
+    if (!open) return;
+    setForm({ ...empty, id: uid("cust") });
+  }, [open]);
+
+  function save() {
+    if (!form.kode || !form.nama) {
+      toast.error("Kode dan nama wajib diisi");
+      return;
+    }
+    onSave(form);
+    onOpenChange(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Tambah Customer</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="customer-kode">Kode Customer</Label>
+            <ResponsiveInput
+              id="customer-kode"
+              value={form.kode}
+              onChange={(kode) => setForm((prev) => ({ ...prev, kode }))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="customer-nama">Nama Customer</Label>
+            <ResponsiveInput
+              id="customer-nama"
+              value={form.nama}
+              onChange={(nama) => setForm((prev) => ({ ...prev, nama }))}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Batal
+          </Button>
+          <Button className="bg-emerald-700 hover:bg-emerald-800" onClick={save}>
+            Simpan
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function CustomerPage() {
   const customers = useDataStore((s) => s.customers);
   const items = useDataStore((s) => s.items);
@@ -38,7 +102,6 @@ export default function CustomerPage() {
   const addLog = useDataStore((s) => s.addLog);
   const [filterCust, setFilterCust] = useState("all");
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<Customer>(empty);
 
   const counts = useMemo(() => {
     const map = new Map<
@@ -65,27 +128,16 @@ export default function CustomerPage() {
     [customers, filterCust],
   );
 
-  function openCreate() {
-    setForm({ ...empty, id: uid("cust") });
-    setOpen(true);
-  }
-
-  function save() {
-    if (!form.kode || !form.nama) {
-      toast.error("Kode dan nama wajib diisi");
-      return;
-    }
-    upsert(form);
-    addLog({
-      waktu: new Date().toISOString(),
-      userId: "local",
-      userNama: "User",
-      aksi: "Simpan Customer",
-      detail: form.kode,
-    });
-    toast.success("Customer disimpan");
-    setOpen(false);
-  }
+  const exportRows = useMemo(
+    () =>
+      filtered.map((c) => ({
+        nama: c.nama,
+        kode: c.kode,
+        material: counts.get(c.id)?.materials ?? 0,
+        finishGood: counts.get(c.id)?.finishGoods ?? 0,
+      })),
+    [filtered, counts],
+  );
 
   return (
     <div>
@@ -93,7 +145,10 @@ export default function CustomerPage() {
         title="DB Customer"
         description="Master data customer untuk Material dan Finish Good."
         action={
-          <Button className="bg-emerald-700 hover:bg-emerald-800" onClick={openCreate}>
+          <Button
+            className="bg-emerald-700 hover:bg-emerald-800"
+            onClick={() => setOpen(true)}
+          >
             Tambah Customer
           </Button>
         }
@@ -108,12 +163,7 @@ export default function CustomerPage() {
         />
         <ExportExcelButton
           page="Customer"
-          rows={filtered.map((c) => ({
-            nama: c.nama,
-            kode: c.kode,
-            material: counts.get(c.id)?.materials ?? 0,
-            finishGood: counts.get(c.id)?.finishGoods ?? 0,
-          }))}
+          rows={exportRows}
           headers={{
             nama: "Nama Customer",
             kode: "Kode Customer",
@@ -160,37 +210,21 @@ export default function CustomerPage() {
         </Table>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Tambah Customer</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <Label>Kode Customer</Label>
-              <Input
-                value={form.kode}
-                onChange={(e) => setForm({ ...form, kode: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Nama Customer</Label>
-              <Input
-                value={form.nama}
-                onChange={(e) => setForm({ ...form, nama: e.target.value })}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Batal
-            </Button>
-            <Button className="bg-emerald-700 hover:bg-emerald-800" onClick={save}>
-              Simpan
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CustomerCreateDialog
+        open={open}
+        onOpenChange={setOpen}
+        onSave={(form) => {
+          upsert(form);
+          addLog({
+            waktu: new Date().toISOString(),
+            userId: "local",
+            userNama: "User",
+            aksi: "Simpan Customer",
+            detail: form.kode,
+          });
+          toast.success("Customer disimpan");
+        }}
+      />
     </div>
   );
 }

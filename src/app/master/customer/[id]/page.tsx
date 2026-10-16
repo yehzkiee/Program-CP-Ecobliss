@@ -9,7 +9,7 @@ import { DetailField } from "@/components/shared/detail-field";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { RelatedRecordTable } from "@/components/shared/related-record-table";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { ResponsiveInput } from "@/components/ui/responsive-input";
 import { Label } from "@/components/ui/label";
 import {
   Table,
@@ -181,17 +181,19 @@ export default function CustomerDetailPage() {
         {editing ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>Kode Customer</Label>
-              <Input
+              <Label htmlFor="edit-customer-kode">Kode Customer</Label>
+              <ResponsiveInput
+                id="edit-customer-kode"
                 value={draft.kode}
-                onChange={(e) => setForm({ ...draft, kode: e.target.value })}
+                onChange={(kode) => setForm({ ...draft, kode })}
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Nama Customer</Label>
-              <Input
+              <Label htmlFor="edit-customer-nama">Nama Customer</Label>
+              <ResponsiveInput
+                id="edit-customer-nama"
                 value={draft.nama}
-                onChange={(e) => setForm({ ...draft, nama: e.target.value })}
+                onChange={(nama) => setForm({ ...draft, nama })}
               />
             </div>
           </div>

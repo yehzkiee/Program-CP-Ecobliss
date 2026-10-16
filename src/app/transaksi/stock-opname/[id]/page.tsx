@@ -8,10 +8,17 @@ import { Plus, Trash2 } from "lucide-react";
 import { BackLink, PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResponsiveInput } from "@/components/ui/responsive-input";
 import { Label } from "@/components/ui/label";
 import { SearchableCombobox } from "@/components/ui/combobox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { buildStockRows, formatDocNo } from "@/lib/mock/data";
+import {
+  buildStockRows,
+  formatDocNo,
+  listBtbBatchStock,
+  type BtbBatchStock,
+} from "@/lib/mock/data";
+import { batchLabel } from "@/lib/batches";
 import { useAuthStore, useDataStore } from "@/lib/store";
 import type {
   OpnameMetode,
@@ -21,7 +28,6 @@ import type {
 } from "@/lib/types";
 import {
   colGroupOpnameWithBatch,
-  colGroupOpnameWithoutBatch,
   tableBodyCellClass,
   tableBodyCellMutedClass,
   tableBodyCellRightClass,
@@ -245,6 +251,10 @@ export default function StockOpnameFormPage() {
       adjustments,
     ],
   );
+  const batchStock = useMemo(
+    () => listBtbBatchStock({ btbs, bkbs, transfers, adjustments }),
+    [adjustments, bkbs, btbs, transfers],
+  );
   const custMap = useMemo(
     () => Object.fromEntries(customers.map((c) => [c.id, c])),
     [customers],
@@ -284,6 +294,61 @@ export default function StockOpnameFormPage() {
     if (fromMaster) return fromMaster;
 
     return fallbackCustomerNama;
+  }
+
+  function lotsForOpname(line: {
+    jenis: "item" | "fg";
+    refId: string;
+    gudangId: string;
+  }) {
+    return batchStock
+      .filter(
+        (lot) =>
+          lot.jenis === line.jenis &&
+          lot.refId === line.refId &&
+          lot.gudangId === line.gudangId &&
+          lot.qty > 0 &&
+          lot.btbId.trim() !== "",
+      )
+      .sort(
+        (a, b) =>
+          a.btbNo.localeCompare(b.btbNo) ||
+          a.batchCustomer.localeCompare(b.batchCustomer),
+      );
+  }
+
+  function opnameLotLabel(lot: BtbBatchStock) {
+    const no = lot.btbNo.trim() || "-";
+    const batch =
+      (batchLabel(lot.batchCustomer, btbs) || lot.batchCustomer).trim() || "-";
+    return `${no} - ${batch} - (Stok: ${lot.qty})`;
+  }
+
+  function applyOpnameLot(line: DraftLine, lot: BtbBatchStock): DraftLine {
+    const followSistem = line.qtyAktualInput === line.qtySistem;
+    const qtyAktualInput = followSistem ? lot.qty : line.qtyAktualInput;
+    return {
+      ...line,
+      btbId: lot.btbId,
+      btbNo: lot.btbNo,
+      batchCustomer: lot.batchCustomer,
+      gudangId: lot.gudangId,
+      qtySistem: lot.qty,
+      qtyAktual: qtyAktualInput,
+      qtyAktualInput,
+    };
+  }
+
+  function withDefaultLot(line: DraftLine): DraftLine {
+    const lots = lotsForOpname(line);
+    const preferred =
+      lots.find(
+        (lot) =>
+          (!line.batchCustomer || lot.batchCustomer === line.batchCustomer) &&
+          (!line.btbId || lot.btbId === line.btbId),
+      ) ?? lots[0];
+    if (!preferred) return line;
+    return applyOpnameLot({ ...line, qtyAktualInput: line.qtySistem }, preferred);
   }
 
   function resolveCustomerId(
@@ -422,7 +487,7 @@ export default function StockOpnameFormPage() {
       setPickerValue("");
       return;
     }
-    const nextLines = buildDraftsFromGudang(stock, gudangId);
+    const nextLines = buildDraftsFromGudang(stock, gudangId).map(withDefaultLot);
     if (nextLines.length === 0) {
       toast.error("Gudang tidak memiliki stok");
       setPickerValue("");
@@ -444,7 +509,7 @@ export default function StockOpnameFormPage() {
       return;
     }
 
-    let nextLines = buildDraftsFromStock(stock, key, metode);
+    let nextLines = buildDraftsFromStock(stock, key, metode).map(withDefaultLot);
     if (nextLines.length === 0) {
       const empty = buildEmptyDraft(key, items, finishGoods, fallbackGudangId);
       if (!empty) {
@@ -491,7 +556,7 @@ export default function StockOpnameFormPage() {
       const rebuilt: DraftLine[] = [];
       for (const gudangId of selectedGudangIds) {
         for (const line of buildDraftsFromGudang(stock, gudangId)) {
-          rebuilt.push(withPrevQty(line));
+          rebuilt.push(withDefaultLot(withPrevQty(line)));
         }
       }
       setMetode(next);
@@ -525,7 +590,7 @@ export default function StockOpnameFormPage() {
           lines = [empty];
         }
       }
-      for (const line of lines) rebuilt.push(withPrevQty(line));
+      for (const line of lines) rebuilt.push(withDefaultLot(withPrevQty(line)));
     }
     setMetode(next);
     setDrafts(rebuilt);
@@ -547,11 +612,24 @@ export default function StockOpnameFormPage() {
         customerId: resolveCustomerId(d.customerId, d.jenis, d.refId),
         gudangId: d.gudangId,
         batchCustomer: d.batchCustomer,
+        btbId: d.btbId,
+        btbNo: d.btbNo,
         qtySistem: d.qtySistem,
         qtyAktual: d.qtyAktualInput,
         selisih: d.qtyAktualInput - d.qtySistem,
       }))
       .filter((l) => l.selisih !== 0);
+
+    if (
+      lines.some(
+        (line) =>
+          !line.btbId &&
+          lotsForOpname(line).length > 0,
+      )
+    ) {
+      toast.error("Setiap baris wajib memilih Batch / No. BTB");
+      return;
+    }
 
     if (lines.length === 0) {
       toast.error("Tidak ada selisih. Transaksi SO tidak dibuat");
@@ -584,11 +662,6 @@ export default function StockOpnameFormPage() {
   }
 
   const displayLines = isView ? (existing?.lines ?? []) : drafts;
-  const showBatch =
-    (!isView && metode === "per_batch") ||
-    (isView &&
-      (existing?.metode === "per_batch" ||
-        existing?.lines.some((l) => l.batchCustomer)));
 
   if (notFound) {
     return (
@@ -668,10 +741,7 @@ export default function StockOpnameFormPage() {
           {isView ? (
             <p className="text-sm text-slate-900">{keterangan || "-"}</p>
           ) : (
-            <Input
-              value={keterangan}
-              onChange={(e) => setKeterangan(e.target.value)}
-            />
+            <ResponsiveInput value={keterangan} onChange={setKeterangan} />
           )}
         </div>
 
@@ -864,31 +934,40 @@ export default function StockOpnameFormPage() {
                   : "Tambahkan Material atau Finish Good untuk mulai mengisi worksheet."}
             </p>
           ) : (
-            <table className={tableShellClass}>
+            <table className={`${tableShellClass} min-w-[1530px]`}>
               <colgroup>
-                {(showBatch
-                  ? colGroupOpnameWithBatch
-                  : colGroupOpnameWithoutBatch
-                ).map((width, index) => (
+                {colGroupOpnameWithBatch.map((width, index) => (
                   <col key={index} className={width} />
                 ))}
-                {!isView && <col className="w-[56px]" />}
+                {!isView && <col className="w-[64px]" />}
               </colgroup>
               <thead>
                 <tr className="border-b bg-muted/30">
-                  <th className={tableHeadCellClass}>Jenis</th>
-                  <th className={tableHeadCellClass}>Kode</th>
-                  <th className={tableHeadCellClass}>Nama</th>
-                  {showBatch && (
-                    <th className={tableHeadCellClass}>Batch</th>
-                  )}
-                  <th className={tableHeadCellClass}>Customer</th>
-                  <th className={tableHeadCellClass}>Gudang</th>
-                  <th className={tableHeadCellRightClass}>Qty Sistem</th>
-                  <th className={tableHeadCellRightClass}>Qty Aktual</th>
-                  <th className={tableHeadCellRightClass}>Selisih</th>
+                  <th className={`${tableHeadCellClass} min-w-[132px] whitespace-nowrap`}>
+                    Jenis
+                  </th>
+                  <th className={`${tableHeadCellClass} min-w-[124px] whitespace-nowrap`}>
+                    Kode
+                  </th>
+                  <th className={`${tableHeadCellClass} min-w-[180px] whitespace-nowrap`}>
+                    Nama Barang
+                  </th>
+                  <th className={`${tableHeadCellClass} min-w-[180px] whitespace-nowrap`}>
+                    Batch / No. BTB
+                  </th>
+                  <th className={`${tableHeadCellClass} whitespace-nowrap`}>Customer</th>
+                  <th className={`${tableHeadCellClass} whitespace-nowrap`}>Gudang</th>
+                  <th className={`${tableHeadCellRightClass} whitespace-nowrap`}>
+                    Qty Sistem
+                  </th>
+                  <th className={`${tableHeadCellRightClass} whitespace-nowrap`}>
+                    Qty Aktual
+                  </th>
+                  <th className={`${tableHeadCellRightClass} whitespace-nowrap`}>
+                    Selisih
+                  </th>
                   {!isView && (
-                    <th className={tableHeadCellClass} />
+                    <th className={`${tableHeadCellClass} whitespace-nowrap`}>Aksi</th>
                   )}
                 </tr>
               </thead>
@@ -902,29 +981,84 @@ export default function StockOpnameFormPage() {
                     : aktual - line.qtySistem;
                   return (
                     <tr key={idx} className="border-b last:border-0">
-                      <td className={tableBodyCellClass}>
-                        <ItemTypeBadge jenis={line.jenis} />
+                      <td className={`${tableBodyCellClass} min-w-[132px]`}>
+                        <div className="flex items-center">
+                          <ItemTypeBadge jenis={line.jenis} />
+                        </div>
                       </td>
-                      <td className={`${tableBodyCellClass} font-medium`}>
+                      <td className={`${tableBodyCellClass} min-w-[124px] font-medium whitespace-nowrap`}>
                         {line.kode}
                       </td>
-                      <td className={`${tableBodyCellClass} whitespace-normal`}>
-                        {line.nama}
+                      <td className={`${tableBodyCellClass} min-w-[180px] overflow-hidden`}>
+                        <p className="line-clamp-2 break-words" title={line.nama}>
+                          {line.nama}
+                        </p>
                       </td>
-                      {showBatch && (
-                        <td className={tableBodyCellMutedClass}>
-                          {line.batchCustomer || "-"}
-                        </td>
-                      )}
-                      <td className={tableBodyCellClass}>
-                        {resolveCustomerNama(
-                          line.customerId,
-                          line.jenis,
-                          line.refId,
+                      <td className={`${tableBodyCellClass} min-w-[180px] overflow-hidden`}>
+                        {isView ? (
+                          <p
+                            className="line-clamp-2 break-words"
+                            title={
+                              line.btbNo
+                                ? `${line.btbNo} - ${(batchLabel(line.batchCustomer ?? "", btbs) || line.batchCustomer || "-").trim()}`
+                                : line.batchCustomer || "-"
+                            }
+                          >
+                            {line.btbNo
+                              ? `${line.btbNo} - ${(batchLabel(line.batchCustomer ?? "", btbs) || line.batchCustomer || "-").trim()}`
+                              : line.batchCustomer || "-"}
+                          </p>
+                        ) : (
+                          <SearchableCombobox
+                            items={lotsForOpname(line).map((lot) => ({
+                              value: `${lot.btbId}:${lot.gudangId}:${lot.batchCustomer}`,
+                              label: opnameLotLabel(lot),
+                            }))}
+                            value={
+                              line.btbId
+                                ? `${line.btbId}:${line.gudangId}:${line.batchCustomer ?? ""}`
+                                : ""
+                            }
+                            onValueChange={(next) => {
+                              const lot = lotsForOpname(line).find(
+                                (row) =>
+                                  `${row.btbId}:${row.gudangId}:${row.batchCustomer}` ===
+                                  next,
+                              );
+                              if (!lot) return;
+                              setDrafts((prev) =>
+                                prev.map((row, i) =>
+                                  i === idx ? applyOpnameLot(row, lot) : row,
+                                ),
+                              );
+                            }}
+                            placeholder="Cari Batch / No. BTB..."
+                            emptyText="Tidak ada batch di gudang ini"
+                            itemNoun="batch"
+                            className="w-full min-w-0 bg-white"
+                          />
                         )}
                       </td>
-                      <td className={tableBodyCellMutedClass}>
-                        {gudangMap[line.gudangId]?.nama ?? "-"}
+                      <td className={`${tableBodyCellClass} overflow-hidden`}>
+                        <p
+                          className="truncate"
+                          title={resolveCustomerNama(
+                            line.customerId,
+                            line.jenis,
+                            line.refId,
+                          )}
+                        >
+                          {resolveCustomerNama(
+                            line.customerId,
+                            line.jenis,
+                            line.refId,
+                          )}
+                        </p>
+                      </td>
+                      <td className={`${tableBodyCellMutedClass} overflow-hidden`}>
+                        <p className="truncate" title={gudangMap[line.gudangId]?.nama ?? "-"}>
+                          {gudangMap[line.gudangId]?.nama ?? "-"}
+                        </p>
                       </td>
                       <td className={tableBodyCellRightClass}>
                         {line.qtySistem}
@@ -957,6 +1091,7 @@ export default function StockOpnameFormPage() {
                       </td>
                       {!isView && (
                         <td className={tableBodyCellClass}>
+                          <div className="flex items-center justify-center">
                           <Button
                             type="button"
                             variant="ghost"
@@ -966,6 +1101,7 @@ export default function StockOpnameFormPage() {
                           >
                             <Trash2 className="size-4" />
                           </Button>
+                          </div>
                         </td>
                       )}
                     </tr>

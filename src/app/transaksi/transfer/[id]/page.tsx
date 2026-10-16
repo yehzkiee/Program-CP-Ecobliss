@@ -9,6 +9,7 @@ import { BackLink, PageHeader } from "@/components/shared/page-header";
 import { DetailField } from "@/components/shared/detail-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResponsiveInput } from "@/components/ui/responsive-input";
 import { Label } from "@/components/ui/label";
 import { SearchableCombobox } from "@/components/ui/combobox";
 import {
@@ -20,14 +21,13 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  formatBtbLotLabel,
   formatDocNo,
   listBtbBatchStock,
-  lotsForCustomer,
   type BtbBatchStock,
 } from "@/lib/mock/data";
+import { batchLabel } from "@/lib/batches";
 import { useAuthStore, useDataStore } from "@/lib/store";
-import type { TransferGudang, TransferLine } from "@/lib/types";
+import type { Btb, TransferGudang, TransferLine } from "@/lib/types";
 import { todayISO, uid, formatDateID } from "@/lib/utils";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 
@@ -41,12 +41,15 @@ function cloneLines(lines: TransferLine[]) {
   return lines.map((l) => ({ ...l }));
 }
 
-function transferLotLabel(lot: BtbBatchStock) {
-  if (!lot.btbNo.trim()) {
-    const batch = lot.batchCustomer.trim() || "-";
-    return `${batch} - (Stok: ${lot.qty})`;
-  }
-  return formatBtbLotLabel(lot);
+function transferLotLabel(lot: BtbBatchStock, docs: Btb[]) {
+  const no = (lot.btbNo ?? "").trim() || "-";
+  const batch =
+    (batchLabel(lot.batchCustomer, docs) || lot.batchCustomer).trim() || "-";
+  const qty =
+    typeof lot.qty === "number" && Number.isFinite(lot.qty)
+      ? lot.qty
+      : Number(lot.qty) || 0;
+  return `${no} - ${batch} - (Stok: ${qty})`;
 }
 
 function parseTransferQty(value: string) {
@@ -115,41 +118,47 @@ export default function TransferFormPage() {
     [adjustments, bkbs, btbs, existing, transfers],
   );
 
-  function masterOf(line: Pick<TransferLine, "jenis" | "refId">) {
-    return line.jenis === "item"
-      ? items.find((item) => item.id === line.refId)
-      : finishGoods.find((fg) => fg.id === line.refId);
+  function lotsFor(line: TransferLine) {
+    return batchStock
+      .filter(
+        (lot) =>
+          lot.jenis === line.jenis &&
+          lot.refId === line.refId &&
+          lot.gudangId === line.dariGudangId &&
+          lot.qty > 0 &&
+          lot.btbId.trim() !== "",
+      )
+      .sort(
+        (a, b) =>
+          a.tanggal.localeCompare(b.tanggal) || a.btbNo.localeCompare(b.btbNo),
+      );
   }
 
-  function lotsFor(line: TransferLine) {
-    const inWarehouse = batchStock.filter(
-      (lot) =>
-        lot.jenis === line.jenis &&
-        lot.refId === line.refId &&
-        lot.gudangId === line.dariGudangId &&
-        lot.qty > 0,
+  function selectedTransferLot(line: TransferLine) {
+    if (!line.btbId) return null;
+    return (
+      lotsFor(line).find(
+        (lot) =>
+          lot.btbId === line.btbId &&
+          lot.gudangId === line.dariGudangId &&
+          lot.batchCustomer === (line.batchCustomer ?? ""),
+      ) ?? null
     );
-    const matched = lotsForCustomer(inWarehouse, masterOf(line)?.customerId);
-    const batchName = masterOf(line)?.batchCustomer?.trim() ?? "";
-    if (
-      batchName &&
-      line.dariGudangId &&
-      !matched.some((lot) => lot.batchCustomer.trim() === batchName)
-    ) {
-      matched.push({
-        key: `master:${line.jenis}:${line.refId}:${line.dariGudangId}:${batchName}`,
-        btbId: "",
-        btbNo: "",
-        jenis: line.jenis,
-        refId: line.refId,
-        customerId: masterOf(line)?.customerId ?? "",
-        batchCustomer: batchName,
-        gudangId: line.dariGudangId,
-        qty: 0,
-        tanggal: "",
-      });
-    }
-    return matched;
+  }
+
+  function remainingTransfer(line: TransferLine, index: number) {
+    const lot = selectedTransferLot(line);
+    if (!lot) return null;
+    const reserved = lines.reduce((sum, other, otherIdx) => {
+      if (otherIdx === index) return sum;
+      const sameLot =
+        other.btbId === lot.btbId &&
+        other.dariGudangId === lot.gudangId &&
+        other.refId === lot.refId &&
+        (other.batchCustomer ?? "") === lot.batchCustomer;
+      return sameLot ? sum + (Number(other.qty) || 0) : sum;
+    }, 0);
+    return Math.max(0, lot.qty - reserved);
   }
 
   const [tanggal, setTanggal] = useState(existing?.tanggal ?? todayISO());
@@ -225,7 +234,7 @@ export default function TransferFormPage() {
           lot.batchCustomer === (line.batchCustomer ?? "") &&
           lot.gudangId === line.dariGudangId,
       );
-      if (!chosen || !(line.btbId || line.batchCustomer)) {
+      if (!chosen || !line.btbId) {
         toast.error("Setiap baris wajib memilih Batch / No. BTB");
         return;
       }
@@ -359,10 +368,7 @@ export default function TransferFormPage() {
           </div>
           <div className="space-y-2">
             <Label>Keterangan</Label>
-            <Input
-              value={keterangan}
-              onChange={(e) => setKeterangan(e.target.value)}
-            />
+            <ResponsiveInput value={keterangan} onChange={setKeterangan} />
           </div>
         </div>
       )}
@@ -418,7 +424,7 @@ export default function TransferFormPage() {
                   label="Batch / No. BTB"
                   value={
                     line.btbNo
-                      ? `${line.btbNo}${line.batchCustomer ? ` · ${line.batchCustomer}` : ""}`
+                      ? `${line.btbNo} - ${(batchLabel(line.batchCustomer ?? "", btbs) || line.batchCustomer || "-").trim()}`
                       : "-"
                   }
                 />
@@ -439,9 +445,9 @@ export default function TransferFormPage() {
             ) : (
               <div
                 key={idx}
-                className="grid gap-2 rounded-lg border p-3 md:grid-cols-2 xl:grid-cols-4"
+                className="flex flex-wrap items-end gap-3 rounded-lg border p-3"
               >
-                <div>
+                <div className="w-[8.5rem] shrink-0">
                   <Label className="text-xs">Jenis</Label>
                   <Select
                     value={line.jenis}
@@ -473,7 +479,7 @@ export default function TransferFormPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="lg:col-span-2">
+                <div className="min-w-[12rem] flex-1 basis-[12rem]">
                   <Label className="text-xs">Barang</Label>
                   <SearchableCombobox
                     items={
@@ -511,97 +517,102 @@ export default function TransferFormPage() {
                     itemNoun="barang"
                   />
                 </div>
-                <div className="xl:col-span-2">
+                <div className="w-full max-w-[280px] min-w-[12rem] shrink-0">
                   <Label className="text-xs">Batch / No. BTB</Label>
                   <SearchableCombobox
                     items={lotsFor(line).map((lot) => ({
-                      value: `${lot.btbId}:${lot.batchCustomer}`,
-                      label: transferLotLabel(lot),
+                      value: `${lot.btbId}:${lot.gudangId}:${lot.batchCustomer}`,
+                      label: transferLotLabel(lot, btbs),
                     }))}
                     value={
-                      line.btbId || line.batchCustomer
-                        ? `${line.btbId ?? ""}:${line.batchCustomer ?? ""}`
+                      line.btbId
+                        ? `${line.btbId}:${line.dariGudangId}:${line.batchCustomer ?? ""}`
                         : ""
                     }
                     onValueChange={(next) => {
                       const matched = lotsFor(line).find(
-                        (lot) => `${lot.btbId}:${lot.batchCustomer}` === next,
+                        (lot) =>
+                          `${lot.btbId}:${lot.gudangId}:${lot.batchCustomer}` ===
+                          next,
                       );
                       if (!matched) return;
+                      const reserved = lines.reduce((sum, other, otherIdx) => {
+                        if (otherIdx === idx) return sum;
+                        const sameLot =
+                          other.btbId === matched.btbId &&
+                          other.dariGudangId === matched.gudangId &&
+                          other.refId === matched.refId &&
+                          (other.batchCustomer ?? "") === matched.batchCustomer;
+                        return sameLot ? sum + (Number(other.qty) || 0) : sum;
+                      }, 0);
+                      const cap = Math.max(0, matched.qty - reserved);
+                      const qty = Math.min(Number(line.qty) || 0, cap);
+                      if ((Number(line.qty) || 0) > cap) {
+                        toast.error(
+                          `Qty transfer dibatasi sisa stok batch (maks ${cap})`,
+                        );
+                      }
                       const nextLines = [...lines];
                       nextLines[idx] = {
                         ...line,
                         btbId: matched.btbId,
                         btbNo: matched.btbNo,
                         batchCustomer: matched.batchCustomer,
+                        qty,
                       };
                       setLines(nextLines);
                     }}
                     placeholder="Cari Batch / No. BTB..."
                     emptyText="Tidak ada batch di gudang asal"
                     itemNoun="batch"
+                    renderItem={(item) => (
+                      <span className="block truncate" title={item.label}>
+                        {item.label}
+                      </span>
+                    )}
                   />
-                  {(() => {
-                    const selected = lotsFor(line).find(
-                      (lot) =>
-                        lot.btbId === (line.btbId ?? "") &&
-                        lot.batchCustomer === (line.batchCustomer ?? ""),
-                    );
-                    if (
-                      !selected ||
-                      selected.qty > 0 ||
-                      !(line.btbId || line.batchCustomer)
-                    ) {
-                      return null;
-                    }
-                    const gudangNama =
-                      gudangMap[line.dariGudangId]?.nama ?? "gudang asal";
-                    const batchNama = selected.batchCustomer.trim() || "ini";
-                    return (
-                      <p className="mt-1 text-xs text-amber-800">
-                        Stok fisik batch {batchNama} di {gudangNama} masih 0.
-                        Belum ada BTB barang masuk, termasuk Hasil Produksi,
-                        untuk batch ini di gudang tersebut.
-                      </p>
-                    );
-                  })()}
                 </div>
-                <div>
+                <div className="w-24 shrink-0">
                   <Label className="text-xs">Qty</Label>
                   <Input
                     type="number"
+                    min={0}
+                    max={remainingTransfer(line, idx) ?? undefined}
                     value={line.qty}
+                    aria-invalid={
+                      (() => {
+                        const cap = remainingTransfer(line, idx);
+                        return (
+                          cap !== null &&
+                          Number(line.qty) > cap
+                        ) || undefined;
+                      })()
+                    }
                     onChange={(e) => {
+                      let qty = parseTransferQty(e.target.value);
+                      const cap = remainingTransfer(line, idx);
+                      if (cap !== null && qty > cap) {
+                        toast.error(
+                          `Qty transfer dibatasi sisa stok batch (maks ${cap})`,
+                        );
+                        qty = cap;
+                      }
                       const next = [...lines];
-                      next[idx] = {
-                        ...line,
-                        qty: parseTransferQty(e.target.value),
-                      };
+                      next[idx] = { ...line, qty };
                       setLines(next);
                     }}
                   />
                   {(() => {
-                    const selected = lotsFor(line).find(
-                      (lot) =>
-                        lot.btbId === (line.btbId ?? "") &&
-                        lot.batchCustomer === (line.batchCustomer ?? ""),
-                    );
-                    if (
-                      !selected ||
-                      !(line.btbId || line.batchCustomer) ||
-                      line.qty <= selected.qty ||
-                      selected.qty <= 0
-                    ) {
-                      return null;
-                    }
+                    const cap = remainingTransfer(line, idx);
+                    if (cap === null || Number(line.qty) <= cap) return null;
                     return (
                       <p className="text-xs text-red-700">
-                        Melebihi stok batch ({selected.qty})
+                        Melebihi stok batch (maks {cap})
                       </p>
                     );
                   })()}
                 </div>
-                <div>
+                <div className="min-w-[10rem] flex-1 basis-[10rem]">
                   <Label className="text-xs">Gudang Asal</Label>
                   <SearchableCombobox
                     items={gudangSelectItems}
@@ -623,8 +634,8 @@ export default function TransferFormPage() {
                     itemNoun="gudang"
                   />
                 </div>
-                <div className="flex items-end gap-2">
-                  <div className="flex-1">
+                <div className="flex min-w-[10rem] flex-1 basis-[10rem] items-end gap-2">
+                  <div className="min-w-0 flex-1">
                     <Label className="text-xs">Gudang Tujuan</Label>
                     <SearchableCombobox
                       items={gudangSelectItems}

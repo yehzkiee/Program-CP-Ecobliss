@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { CustomerFilterCombobox } from "@/components/shared/customer-filter-combobox";
@@ -10,6 +10,7 @@ import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader, StatusBadge } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResponsiveInput } from "@/components/ui/responsive-input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -56,31 +57,253 @@ const blank = (): FinishGood => ({
   status: "aktif",
 });
 
-function customerInitials(nama: string): string {
-  const cleaned = nama.replace(/^(PT|CV|UD)\.?\s+/i, "").trim();
-  const parts = cleaned.split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "XX";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-}
+type CreateDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  customers: Customer[];
+  fallbackCustomerId: string;
+  onSave: (row: FinishGood) => void;
+};
 
-function generateBatchCustomer(
-  customerId: string,
-  customers: Customer[],
-  finishGoods: FinishGood[],
-  excludeId?: string,
-): string {
-  const customer = customers.find((c) => c.id === customerId);
-  const initials = customerInitials(customer?.nama ?? "XX");
-  const prefix = `BC-${initials}-FG`;
-  const seqs = finishGoods
-    .filter((f) => f.customerId === customerId && f.id !== excludeId)
-    .map((f) => {
-      const match = (f.batchCustomer ?? "").match(/FG(\d+)$/i);
-      return match ? Number(match[1]) : 0;
+/** Form state hidup di sini — pengetikan tidak me-render ulang tabel di halaman. */
+function FinishGoodCreateDialog({
+  open,
+  onOpenChange,
+  customers,
+  fallbackCustomerId,
+  onSave,
+}: CreateDialogProps) {
+  const [form, setForm] = useState<FinishGood>(blank());
+
+  const customerItems = useMemo(
+    () =>
+      customers.map((customer) => ({
+        value: customer.id,
+        label: customer.nama,
+      })),
+    [customers],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    setForm({
+      ...blank(),
+      id: uid("fg"),
+      customerId: fallbackCustomerId,
     });
-  const next = (seqs.length ? Math.max(...seqs) : 0) + 1;
-  return `${prefix}${String(next).padStart(2, "0")}`;
+  }, [open, fallbackCustomerId]);
+
+  function save() {
+    if (!form.kode || !form.nama || !form.customerId) {
+      toast.error("Lengkapi kode, nama, dan customer");
+      return;
+    }
+    onSave({
+      ...form,
+      batchCustomer: form.batchCustomer.trim(),
+      konversi1: 1,
+    });
+    onOpenChange(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Tambah Finish Good</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="finish-good-kode">Kode FG</Label>
+            <ResponsiveInput
+              id="finish-good-kode"
+              value={form.kode}
+              onChange={(kode) => setForm((prev) => ({ ...prev, kode }))}
+            />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="finish-good-nama">Nama FG</Label>
+            <ResponsiveInput
+              id="finish-good-nama"
+              value={form.nama}
+              onChange={(nama) => setForm((prev) => ({ ...prev, nama }))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Customer</Label>
+            <SearchableCombobox
+              items={customerItems}
+              value={form.customerId || fallbackCustomerId}
+              onValueChange={(next) =>
+                setForm((prev) => ({ ...prev, customerId: next ?? "" }))
+              }
+              placeholder="Cari nama customer..."
+              emptyText="Tidak ada customer yang cocok"
+              itemNoun="customer"
+              className="bg-white"
+            />
+          </div>
+          <div className="min-w-0 space-y-2">
+            <Label htmlFor="finish-good-batch-customer">Batch Customer</Label>
+            <ResponsiveInput
+              id="finish-good-batch-customer"
+              type="text"
+              className="w-full bg-white"
+              placeholder="Masukkan batch customer"
+              value={form.batchCustomer}
+              onChange={(batchCustomer) =>
+                setForm((prev) => ({ ...prev, batchCustomer }))
+              }
+            />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <p className="text-sm font-medium text-slate-700">
+              Konversi UOM (3 tingkatan)
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>UOM 1</Label>
+            <Select
+              value={form.uom1}
+              onValueChange={(v) =>
+                setForm((prev) => ({ ...prev, uom1: v ?? "PCS" }))
+              }
+              items={UOM_OPTIONS.map((u) => ({ value: u, label: u }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih UOM 1" />
+              </SelectTrigger>
+              <SelectContent>
+                {UOM_OPTIONS.map((u) => (
+                  <SelectItem key={u} value={u}>
+                    {u}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="hidden sm:block" aria-hidden />
+          <div className="space-y-2">
+            <Label>UOM 2</Label>
+            <Select
+              value={form.uom2 || UOM_NONE}
+              onValueChange={(v) =>
+                setForm((prev) => ({
+                  ...prev,
+                  uom2: !v || v === UOM_NONE ? "" : v,
+                  konversi2: !v || v === UOM_NONE ? 0 : prev.konversi2 || 1,
+                }))
+              }
+              items={[
+                { value: UOM_NONE, label: "—" },
+                ...UOM_OPTIONS.map((u) => ({ value: u, label: u })),
+              ]}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Opsional" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={UOM_NONE}>—</SelectItem>
+                {UOM_OPTIONS.map((u) => (
+                  <SelectItem key={u} value={u}>
+                    {u}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Konversi UOM 2</Label>
+            <ResponsiveInput
+              type="number"
+              min={0}
+              disabled={!form.uom2}
+              value={form.konversi2}
+              onChange={(raw) =>
+                setForm((prev) => ({
+                  ...prev,
+                  konversi2: Number(raw) || 0,
+                }))
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>UOM 3</Label>
+            <Select
+              value={form.uom3 || UOM_NONE}
+              onValueChange={(v) =>
+                setForm((prev) => ({
+                  ...prev,
+                  uom3: !v || v === UOM_NONE ? "" : v,
+                  konversi3: !v || v === UOM_NONE ? 0 : prev.konversi3 || 1,
+                }))
+              }
+              items={[
+                { value: UOM_NONE, label: "—" },
+                ...UOM_OPTIONS.map((u) => ({ value: u, label: u })),
+              ]}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Opsional" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={UOM_NONE}>—</SelectItem>
+                {UOM_OPTIONS.map((u) => (
+                  <SelectItem key={u} value={u}>
+                    {u}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Konversi UOM 3</Label>
+            <ResponsiveInput
+              type="number"
+              min={0}
+              disabled={!form.uom3}
+              value={form.konversi3}
+              onChange={(raw) =>
+                setForm((prev) => ({
+                  ...prev,
+                  konversi3: Number(raw) || 0,
+                }))
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Status</Label>
+            <Select
+              value={form.status}
+              onValueChange={(v) =>
+                setForm((prev) => ({ ...prev, status: v as StatusAktif }))
+              }
+              items={[
+                { value: "aktif", label: "Aktif" },
+                { value: "nonaktif", label: "Nonaktif" },
+              ]}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="aktif">Aktif</SelectItem>
+                <SelectItem value="nonaktif">Nonaktif</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Batal
+          </Button>
+          <Button className="bg-emerald-700 hover:bg-emerald-800" onClick={save}>
+            Simpan
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 export default function FinishGoodPage() {
@@ -88,11 +311,10 @@ export default function FinishGoodPage() {
   const customers = useDataStore((s) => s.customers);
   const upsert = useDataStore((s) => s.upsertFg);
   const [q, setQ] = useState("");
+  const deferredQ = useDeferredValue(q);
   const [filterCust, setFilterCust] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [open, setOpen] = useState(false);
-  const [batchEdited, setBatchEdited] = useState(false);
-  const [form, setForm] = useState<FinishGood>(blank());
 
   const custMap = useMemo(
     () => Object.fromEntries(customers.map((c) => [c.id, c])),
@@ -102,14 +324,19 @@ export default function FinishGoodPage() {
   const fallbackCustomerId = customers[0]?.id ?? "";
   const fallbackCustomerNama = customers[0]?.nama ?? "PT Sinar Abadi";
 
+  // Perbaikan sekali saja, bukan di setiap render/keypress.
   useEffect(() => {
     if (!fallbackCustomerId) return;
-    for (const fg of finishGoods) {
-      if (!fg.customerId || !custMap[fg.customerId]) {
-        upsert({ ...fg, customerId: fallbackCustomerId });
-      }
+    const broken = finishGoods.filter(
+      (fg) => !fg.customerId || !custMap[fg.customerId],
+    );
+    if (broken.length === 0) return;
+    for (const fg of broken) {
+      upsert({ ...fg, customerId: fallbackCustomerId });
     }
-  }, [finishGoods, custMap, fallbackCustomerId, upsert]);
+    // Hanya saat daftar customer berubah; jangan ikuti finishGoods agar tidak loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot repair
+  }, [fallbackCustomerId, custMap, upsert]);
 
   function resolveCustomerNama(customerId: string) {
     const nama = custMap[customerId]?.nama?.trim();
@@ -117,15 +344,17 @@ export default function FinishGoodPage() {
   }
 
   const filtered = useMemo(() => {
+    const needle = deferredQ.toLowerCase();
     return finishGoods.filter((i) => {
       const matchQ =
-        i.kode.toLowerCase().includes(q.toLowerCase()) ||
-        i.nama.toLowerCase().includes(q.toLowerCase());
+        !needle ||
+        i.kode.toLowerCase().includes(needle) ||
+        i.nama.toLowerCase().includes(needle);
       const matchCust = filterCust === "all" || i.customerId === filterCust;
       const matchStatus = filterStatus === "all" || i.status === filterStatus;
       return matchQ && matchCust && matchStatus;
     });
-  }, [finishGoods, q, filterCust, filterStatus]);
+  }, [finishGoods, deferredQ, filterCust, filterStatus]);
 
   const statusFilterItems = useMemo(
     () => [
@@ -136,32 +365,22 @@ export default function FinishGoodPage() {
     [],
   );
 
-  function openCreate() {
-    const customerId = fallbackCustomerId;
-    setBatchEdited(false);
-    setForm({
-      ...blank(),
-      id: uid("fg"),
-      customerId,
-      batchCustomer: customerId
-        ? generateBatchCustomer(customerId, customers, finishGoods)
-        : "",
-    });
-    setOpen(true);
-  }
-
-  function save() {
-    if (!form.kode || !form.nama || !form.customerId) {
-      toast.error("Lengkapi kode, nama, dan customer");
-      return;
-    }
-    const batchCustomer =
-      form.batchCustomer.trim() ||
-      generateBatchCustomer(form.customerId, customers, finishGoods, form.id);
-    upsert({ ...form, batchCustomer, konversi1: 1 });
-    toast.success("Finish Good disimpan");
-    setOpen(false);
-  }
+  const exportRows = useMemo(
+    () =>
+      filtered.map((i) => ({
+        kode: i.kode,
+        nama: i.nama,
+        customer: resolveCustomerNama(i.customerId),
+        batch: i.batchCustomer?.trim() || "-",
+        uom1: i.uom1 ? `${i.uom1} (${i.konversi1})` : "-",
+        uom2: i.uom2 ? `${i.uom2} (${i.konversi2})` : "-",
+        uom3: i.uom3 ? `${i.uom3} (${i.konversi3})` : "-",
+        status: formatStatusLabel(i.status),
+      })),
+    // resolveCustomerNama stabil via custMap
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filtered, custMap, fallbackCustomerNama],
+  );
 
   return (
     <div>
@@ -169,7 +388,10 @@ export default function FinishGoodPage() {
         title="DB Finish Good"
         description="Master produk jadi dengan customer, batch, UOM, dan status."
         action={
-          <Button className="bg-emerald-700 hover:bg-emerald-800" onClick={openCreate}>
+          <Button
+            className="bg-emerald-700 hover:bg-emerald-800"
+            onClick={() => setOpen(true)}
+          >
             Tambah Finish Good
           </Button>
         }
@@ -204,16 +426,7 @@ export default function FinishGoodPage() {
         </Select>
         <ExportExcelButton
           page="Finish_Good"
-          rows={filtered.map((i) => ({
-            kode: i.kode,
-            nama: i.nama,
-            customer: resolveCustomerNama(i.customerId),
-            batch: i.batchCustomer?.trim() || "-",
-            uom1: i.uom1 ? `${i.uom1} (${i.konversi1})` : "-",
-            uom2: i.uom2 ? `${i.uom2} (${i.konversi2})` : "-",
-            uom3: i.uom3 ? `${i.uom3} (${i.konversi3})` : "-",
-            status: formatStatusLabel(i.status),
-          }))}
+          rows={exportRows}
           headers={{
             kode: "Kode FG",
             nama: "Nama FG",
@@ -275,209 +488,16 @@ export default function FinishGoodPage() {
         </Table>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Tambah Finish Good</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Kode FG</Label>
-              <Input
-                value={form.kode}
-                onChange={(e) => setForm({ ...form, kode: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Nama FG</Label>
-              <Input
-                value={form.nama}
-                onChange={(e) => setForm({ ...form, nama: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Customer</Label>
-              <SearchableCombobox
-                items={customers.map((customer) => ({
-                  value: customer.id,
-                  label: customer.nama,
-                }))}
-                value={form.customerId || fallbackCustomerId}
-                onValueChange={(next) => {
-                  const customerId = next ?? "";
-                  const keepManual = batchEdited && form.batchCustomer.trim() !== "";
-                  setForm({
-                    ...form,
-                    customerId,
-                    batchCustomer: keepManual
-                      ? form.batchCustomer
-                      : customerId
-                        ? generateBatchCustomer(
-                            customerId,
-                            customers,
-                            finishGoods,
-                            form.id,
-                          )
-                        : "",
-                  });
-                }}
-                placeholder="Cari nama customer..."
-                emptyText="Tidak ada customer yang cocok"
-                itemNoun="customer"
-                className="bg-white"
-              />
-            </div>
-            <div className="min-w-0 space-y-2">
-              <Label htmlFor="finish-good-batch-customer">Batch Customer</Label>
-              <Input
-                id="finish-good-batch-customer"
-                className="w-full"
-                value={form.batchCustomer}
-                onChange={(e) => {
-                  setBatchEdited(true);
-                  setForm({ ...form, batchCustomer: e.target.value });
-                }}
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <p className="text-sm font-medium text-slate-700">
-                Konversi UOM (3 tingkatan)
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label>UOM 1</Label>
-              <Select
-                value={form.uom1}
-                onValueChange={(v) => setForm({ ...form, uom1: v ?? "PCS" })}
-                items={UOM_OPTIONS.map((u) => ({ value: u, label: u }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih UOM 1" />
-                </SelectTrigger>
-                <SelectContent>
-                  {UOM_OPTIONS.map((u) => (
-                    <SelectItem key={u} value={u}>
-                      {u}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="hidden sm:block" aria-hidden />
-            <div className="space-y-2">
-              <Label>UOM 2</Label>
-              <Select
-                value={form.uom2 || UOM_NONE}
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    uom2: !v || v === UOM_NONE ? "" : v,
-                    konversi2: !v || v === UOM_NONE ? 0 : form.konversi2 || 1,
-                  })
-                }
-                items={[
-                  { value: UOM_NONE, label: "—" },
-                  ...UOM_OPTIONS.map((u) => ({ value: u, label: u })),
-                ]}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Opsional" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UOM_NONE}>—</SelectItem>
-                  {UOM_OPTIONS.map((u) => (
-                    <SelectItem key={u} value={u}>
-                      {u}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Konversi UOM 2</Label>
-              <Input
-                type="number"
-                min={0}
-                disabled={!form.uom2}
-                value={form.konversi2}
-                onChange={(e) =>
-                  setForm({ ...form, konversi2: Number(e.target.value) || 0 })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>UOM 3</Label>
-              <Select
-                value={form.uom3 || UOM_NONE}
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    uom3: !v || v === UOM_NONE ? "" : v,
-                    konversi3: !v || v === UOM_NONE ? 0 : form.konversi3 || 1,
-                  })
-                }
-                items={[
-                  { value: UOM_NONE, label: "—" },
-                  ...UOM_OPTIONS.map((u) => ({ value: u, label: u })),
-                ]}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Opsional" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UOM_NONE}>—</SelectItem>
-                  {UOM_OPTIONS.map((u) => (
-                    <SelectItem key={u} value={u}>
-                      {u}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Konversi UOM 3</Label>
-              <Input
-                type="number"
-                min={0}
-                disabled={!form.uom3}
-                value={form.konversi3}
-                onChange={(e) =>
-                  setForm({ ...form, konversi3: Number(e.target.value) || 0 })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select
-                value={form.status}
-                onValueChange={(v) =>
-                  setForm({ ...form, status: v as StatusAktif })
-                }
-                items={[
-                  { value: "aktif", label: "Aktif" },
-                  { value: "nonaktif", label: "Nonaktif" },
-                ]}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="aktif">Aktif</SelectItem>
-                  <SelectItem value="nonaktif">Nonaktif</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Batal
-            </Button>
-            <Button className="bg-emerald-700 hover:bg-emerald-800" onClick={save}>
-              Simpan
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FinishGoodCreateDialog
+        open={open}
+        onOpenChange={setOpen}
+        customers={customers}
+        fallbackCustomerId={fallbackCustomerId}
+        onSave={(row) => {
+          upsert(row);
+          toast.success("Finish Good disimpan");
+        }}
+      />
     </div>
   );
 }

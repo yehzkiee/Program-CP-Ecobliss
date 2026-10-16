@@ -27,6 +27,7 @@ import {
 import {
   buildStockRows,
   buildTitipanRows,
+  listBtbBatchStock,
   isApprovedAdjustment,
   findFinishGood,
   findItem,
@@ -96,7 +97,8 @@ const reportGroups: { label: string; items: ReportItem[] }[] = [
       { id: "per-customer", label: "Per Customer" },
       { id: "per-item", label: "Per Material" },
       { id: "per-fg", label: "Per FG" },
-      { id: "per-batch", label: "Per Batch" },
+      { id: "per-batch", label: "Per Batch Customer" },
+      { id: "per-btb", label: "Per Batch No BTB" },
       { id: "per-gudang", label: "Per Gudang" },
       { id: "titipan", label: "Barang Titipan" },
     ],
@@ -519,6 +521,51 @@ export default function ReportPage() {
     return Array.from(map.entries()).map(([key, qty]) => ({ key, qty }));
   };
 
+  /**
+   * Per Batch No BTB: sisa stok digabung per nomor BTB sumber,
+   * dengan filter Material/FG, Customer, dan Gudang.
+   */
+  const perBtbRows = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const lot of listBtbBatchStock({
+      btbs,
+      bkbs,
+      transfers,
+      adjustments,
+    })) {
+      if (lot.qty <= 0) continue;
+      const master =
+        lot.jenis === "item"
+          ? findItem(lot.refId, items)
+          : findFinishGood(lot.refId, finishGoods);
+      const customerId = master?.customerId || lot.customerId;
+      if (filterCust !== "all" && customerId !== filterCust) continue;
+      if (filterGudang !== "all" && lot.gudangId !== filterGudang) continue;
+      if (
+        selectedBarang &&
+        (lot.jenis !== selectedBarang.jenis ||
+          lot.refId !== selectedBarang.refId)
+      ) {
+        continue;
+      }
+      const key = lot.btbNo.trim() || "-";
+      totals.set(key, (totals.get(key) ?? 0) + lot.qty);
+    }
+    return Array.from(totals.entries())
+      .map(([key, qty]) => ({ key, qty }))
+      .sort((a, b) => a.key.localeCompare(b.key, "id"));
+  }, [
+    adjustments,
+    bkbs,
+    btbs,
+    filterCust,
+    filterGudang,
+    finishGoods,
+    items,
+    selectedBarang,
+    transfers,
+  ]);
+
   /** Per Gudang: filter stok mentah by barang terpilih, lalu jumlahkan qty per gudang. */
   const perGudangRows = useMemo(() => {
     const matched = stock.filter((row) => {
@@ -605,7 +652,9 @@ export default function ReportPage() {
               ).filter((r) => r.key)
             : tab === "per-batch"
               ? groupSum((r) => r.batchCustomer || "-")
-              : perGudangRows;
+              : tab === "per-btb"
+                ? perBtbRows
+                : perGudangRows;
     const title =
       tab === "per-customer"
         ? "Customer"
@@ -615,7 +664,9 @@ export default function ReportPage() {
             ? "Finish Good"
             : tab === "per-batch"
               ? "Batch Customer"
-              : "Gudang";
+              : tab === "per-btb"
+                ? "No. BTB"
+                : "Gudang";
     const page =
       tab === "per-customer"
         ? "Report_Per_Customer"
@@ -624,8 +675,10 @@ export default function ReportPage() {
           : tab === "per-fg"
             ? "Report_Per_FG"
             : tab === "per-batch"
-              ? "Report_Per_Batch"
-              : "Report_Per_Gudang";
+              ? "Report_Per_Batch_Customer"
+              : tab === "per-btb"
+                ? "Report_Per_Batch_No_BTB"
+                : "Report_Per_Gudang";
     return {
       page,
       headers: { key: title, qty: "Total Qty" } as Record<string, string>,
@@ -749,6 +802,9 @@ export default function ReportPage() {
             title="Batch Customer"
             rows={groupSum((r) => r.batchCustomer || "-")}
           />
+        )}
+        {tab === "per-btb" && (
+          <SimpleGroupTable title="No. BTB" rows={perBtbRows} />
         )}
         {tab === "per-gudang" && (
           <SimpleGroupTable title="Gudang" rows={perGudangRows} />

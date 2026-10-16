@@ -155,12 +155,19 @@ async function main() {
     check("batch baru terpilih di form BTB", true);
 
     await page.getByRole("button", { name: "Baris Material" }).click();
-    const materialInput = page.getByRole("combobox", { name: "Cari material..." });
+    const materialInput = page
+      .getByPlaceholder("Cari material...")
+      .or(page.getByRole("combobox", { name: /Cari material/i }))
+      .first();
     await materialInput.waitFor();
     const materialLabel = (await materialInput.inputValue()).trim();
     check("baris material terisi", materialLabel.length > 0, materialLabel);
     const gudangLabel = (
-      await page.getByRole("combobox", { name: "Cari gudang..." }).inputValue()
+      await page
+        .getByPlaceholder("Cari gudang...")
+        .or(page.getByRole("combobox", { name: /Cari gudang/i }))
+        .first()
+        .inputValue()
     ).trim();
     const ownerState = await (await context.request.get(`${base}/api/state`)).json();
     const ownerItem = ownerState.state.items.find((row) =>
@@ -170,11 +177,20 @@ async function main() {
       (row) => row.id === ownerItem?.customerId,
     );
     check("customer pemilik material ditemukan", Boolean(owner?.nama), ownerItem?.customerId);
-    const customerInput = page.getByRole("combobox", { name: "Cari nama customer..." });
+    const customerInput = page
+      .getByPlaceholder("Cari nama customer...")
+      .or(page.getByRole("combobox", { name: /Cari nama customer/i }))
+      .first();
     await customerInput.click();
     await customerInput.fill(owner.nama);
     await page.getByRole("option").filter({ hasText: owner.nama }).first().click();
-    await page.getByText("Qty", { exact: true }).locator("xpath=..").locator("input").fill("4");
+    await page
+      .locator("label")
+      .filter({ hasText: /^Qty$/ })
+      .locator("xpath=..")
+      .locator("input")
+      .first()
+      .fill("4");
     await page.locator("textarea").first().fill(note);
 
     const savedBtb = page.waitForResponse(
@@ -214,14 +230,20 @@ async function main() {
     await page.goto(`${base}/transaksi/bkb/baru`);
     await page.getByRole("heading", { name: "Buat BKB" }).waitFor();
     await page.getByRole("button", { name: "Baris Material" }).click();
-    const bkbMaterial = page.getByRole("combobox", { name: "Cari material..." });
+    const bkbMaterial = page
+      .getByPlaceholder("Cari material...")
+      .or(page.getByRole("combobox", { name: /Cari material/i }))
+      .first();
     await bkbMaterial.click();
     await bkbMaterial.fill(materialLabel);
     const materialOption = page.getByRole("option").filter({ hasText: materialLabel }).first();
     await materialOption.waitFor();
     await materialOption.click();
 
-    const bkbBatch = page.getByRole("combobox", { name: "Pilih batch" });
+    const bkbBatch = page
+      .getByPlaceholder("Pilih batch")
+      .or(page.getByRole("combobox", { name: /Pilih batch/i }))
+      .first();
     await bkbBatch.click();
     await page.getByRole("option").first().waitFor();
     const bkbOptions = await optionTexts(page.getByRole("option"));

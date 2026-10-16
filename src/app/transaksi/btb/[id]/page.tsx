@@ -11,8 +11,9 @@ import { DetailField, DocLink } from "@/components/shared/detail-field";
 import { DocLineViewTable } from "@/components/shared/doc-line-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResponsiveInput } from "@/components/ui/responsive-input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { ResponsiveTextarea } from "@/components/ui/responsive-textarea";
 import { SearchableCombobox } from "@/components/ui/combobox";
 import {
   Select,
@@ -543,11 +544,11 @@ export default function BtbFormPage() {
           </div>
           <div className="space-y-1.5">
             <Label>No PO</Label>
-            <Input value={noPo} onChange={(e) => setNoPo(e.target.value)} />
+            <ResponsiveInput value={noPo} onChange={setNoPo} />
           </div>
           <div className="space-y-1.5">
             <Label>No SPK</Label>
-            <Input value={noSpk} onChange={(e) => setNoSpk(e.target.value)} />
+            <ResponsiveInput value={noSpk} onChange={setNoSpk} />
           </div>
           <div className="space-y-1.5">
             <Label>Batch</Label>
@@ -562,9 +563,9 @@ export default function BtbFormPage() {
           </div>
           <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
             <Label>Keterangan</Label>
-            <Textarea
+            <ResponsiveTextarea
               value={keterangan}
-              onChange={(e) => setKeterangan(e.target.value)}
+              onChange={setKeterangan}
               rows={3}
             />
           </div>

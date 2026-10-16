@@ -40,6 +40,10 @@ type SearchableComboboxProps<T extends SearchableComboboxItem> = {
   itemNoun?: string
   listClassName?: string
   itemClassName?: string
+  /** Extra classes for the popup panel (width, max-width, etc.). */
+  popupClassName?: string
+  /** Extra classes for the text input inside the field. */
+  inputClassName?: string
   renderItem?: (item: T) => React.ReactNode
   /**
    * Shown inside the field, beside the text and before the chevron, while the
@@ -48,7 +52,7 @@ type SearchableComboboxProps<T extends SearchableComboboxItem> = {
   endAdornment?: React.ReactNode
 }
 
-function SearchableCombobox<T extends SearchableComboboxItem>({
+function SearchableComboboxInner<T extends SearchableComboboxItem>({
   items,
   value,
   onValueChange,
@@ -62,36 +66,40 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
   itemNoun = "barang",
   listClassName,
   itemClassName,
+  popupClassName,
+  inputClassName,
   renderItem,
   endAdornment,
 }: SearchableComboboxProps<T>) {
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [query, setQuery] = React.useState("")
   const [editing, setEditing] = React.useState(false)
-  const [trackedValue, setTrackedValue] = React.useState(value)
   const typingRef = React.useRef(false)
+  const prevValueRef = React.useRef(value)
 
   const selected = React.useMemo(
     () => items.find((item) => item.value === value) ?? null,
     [items, value],
   )
 
-  // Saat pengguna tidak sedang mengetik, kolom menampilkan label pilihan aktif.
   const idleLabel = selected?.label ?? ""
-  const queryOwned = preserveSearchQuery && typingRef.current
-  if (!queryOwned && !editing && query !== idleLabel) {
-    setQuery(idleLabel)
-  }
 
-  // Menyesuaikan state saat value dari parent berubah (pola resmi React
-  // "storing information from previous renders"), tanpa menyentuh ref saat render.
-  if (value !== trackedValue) {
-    setTrackedValue(value)
-    if (trackedValue && !value && !typingRef.current) {
-      setQuery("")
+  // Sync label idle hanya saat value/selected berubah — jangan setState di render
+  // (itu memicu re-render berantai setiap parent mengetik di field lain).
+  React.useEffect(() => {
+    const valueChanged = prevValueRef.current !== value
+    prevValueRef.current = value
+    if (valueChanged) {
+      typingRef.current = false
+      if (!value) {
+        setQuery("")
+        setEditing(false)
+        return
+      }
     }
-    typingRef.current = false
-  }
+    if (typingRef.current || editing) return
+    setQuery((current) => (current === idleLabel ? current : idleLabel))
+  }, [value, idleLabel, editing])
 
   const { visible, hint } = React.useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -187,7 +195,11 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
           placeholder={placeholder}
           onFocus={(event) => event.currentTarget.select()}
           data-slot="combobox-input"
-          className="h-full min-w-0 flex-1 truncate border-0 bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+          title={idleLabel || undefined}
+          className={cn(
+            "h-full min-w-0 flex-1 truncate border-0 bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed",
+            inputClassName,
+          )}
         />
         {endAdornment && !editing ? (
           <span className="flex shrink-0 items-center">{endAdornment}</span>
@@ -210,7 +222,10 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
         >
           <ComboboxPrimitive.Popup
             data-slot="combobox-content"
-            className="relative z-50 max-h-(--available-height) w-(--anchor-width) origin-(--transform-origin) overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
+            className={cn(
+              "relative z-50 max-h-(--available-height) w-(--anchor-width) origin-(--transform-origin) overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+              popupClassName,
+            )}
           >
             <ComboboxPrimitive.List
               className={cn(
@@ -231,7 +246,9 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
                     {renderItem ? (
                       renderItem(item)
                     ) : (
-                      <span className="block truncate">{item.label}</span>
+                      <span className="block truncate" title={item.label}>
+                        {item.label}
+                      </span>
                     )}
                   </span>
                   <ComboboxPrimitive.ItemIndicator
@@ -258,5 +275,9 @@ function SearchableCombobox<T extends SearchableComboboxItem>({
     </ComboboxPrimitive.Root>
   )
 }
+
+const SearchableCombobox = React.memo(
+  SearchableComboboxInner,
+) as typeof SearchableComboboxInner
 
 export { SearchableCombobox }

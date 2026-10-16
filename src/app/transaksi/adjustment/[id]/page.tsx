@@ -12,15 +12,15 @@ import {
 import { FileUpload, type UploadedFile } from "@/components/shared/file-upload";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResponsiveInput } from "@/components/ui/responsive-input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  formatBtbLotLabel,
   formatDocNo,
   listBtbBatchStock,
-  lotsForCustomer,
   type BtbBatchStock,
 } from "@/lib/mock/data";
+import { batchLabel } from "@/lib/batches";
 import { useAuthStore, useDataStore } from "@/lib/store";
 import type { Adjustment, AdjustmentLine } from "@/lib/types";
 import {
@@ -42,16 +42,6 @@ function movementLabel(line: AdjustmentLine) {
   if (line.out > 0 && line.in === 0) return "Mengurangi stok";
   if (line.in > 0 && line.out > 0) return "Koreksi campuran";
   return "Tanpa perubahan";
-}
-
-function btbStockLabel(lot: BtbBatchStock, siblings: BtbBatchStock[], gudangName?: string) {
-  const duplicated = siblings.some(
-    (row) =>
-      row.btbNo === lot.btbNo &&
-      row.batchCustomer === lot.batchCustomer &&
-      row.gudangId !== lot.gudangId,
-  );
-  return formatBtbLotLabel(lot, duplicated ? gudangName : undefined);
 }
 
 function signedQty(line: AdjustmentLine) {
@@ -146,19 +136,45 @@ function AdjustmentFormInner() {
     [adjustments, bkbs, btbs, existing?.id, transfers],
   );
 
-  function customerOf(line: Pick<AdjustmentLine, "jenis" | "refId">) {
-    const master =
-      line.jenis === "item"
-        ? items.find((item) => item.id === line.refId)
-        : finishGoods.find((fg) => fg.id === line.refId);
-    return master?.customerId ?? "";
-  }
-
   function lotsFor(line: AdjustmentLine) {
-    const matched = batchStock.filter(
+    return batchStock.filter(
       (lot) => lot.jenis === line.jenis && lot.refId === line.refId && lot.qty > 0,
     );
-    return lotsForCustomer(matched, customerOf(line));
+  }
+
+  function adjustmentBatchLabel(lot: BtbBatchStock) {
+    const no = lot.btbNo.trim() || "-";
+    const batch =
+      (batchLabel(lot.batchCustomer, btbs) || lot.batchCustomer).trim() || "-";
+    const gudang = gudangMap[lot.gudangId]?.nama?.trim() || "-";
+    return `${no} - ${batch} - ${gudang} - (Stok: ${lot.qty})`;
+  }
+
+  function selectedLot(line: AdjustmentLine) {
+    if (!line.btbId) return null;
+    return (
+      lotsFor(line).find(
+        (lot) =>
+          lot.btbId === line.btbId &&
+          lot.gudangId === line.gudangId &&
+          lot.batchCustomer === (line.batchCustomer ?? ""),
+      ) ?? null
+    );
+  }
+
+  function remainingOut(line: AdjustmentLine, index: number) {
+    const lot = selectedLot(line);
+    if (!lot) return null;
+    const reserved = lines.reduce((sum, other, otherIdx) => {
+      if (otherIdx === index || other.out <= 0) return sum;
+      const sameLot =
+        other.btbId === lot.btbId &&
+        other.gudangId === lot.gudangId &&
+        other.refId === lot.refId &&
+        (other.batchCustomer ?? "") === lot.batchCustomer;
+      return sameLot ? sum + other.out : sum;
+    }, 0);
+    return Math.max(0, lot.qty - reserved);
   }
 
   const mandiri = !soId;
@@ -235,12 +251,9 @@ function AdjustmentFormInner() {
     setPicker("");
   }
 
-  function applySignedQty(idx: number, raw: string) {
-    setQtyText((prev) => ({ ...prev, [idx]: raw }));
-    if (raw === "" || raw === "-" || raw === "+") return;
-    const value = Number(raw);
-    if (Number.isNaN(value)) return;
+  function writeSignedQty(idx: number, value: number) {
     const abs = Math.abs(value);
+    setQtyText((prev) => ({ ...prev, [idx]: String(value) }));
     setLines((prev) =>
       prev.map((line, i) =>
         i === idx
@@ -253,6 +266,23 @@ function AdjustmentFormInner() {
           : line,
       ),
     );
+  }
+
+  function applySignedQty(idx: number, raw: string) {
+    setQtyText((prev) => ({ ...prev, [idx]: raw }));
+    if (raw === "" || raw === "-" || raw === "+") return;
+    const value = Number(raw);
+    if (Number.isNaN(value)) return;
+    const line = lines[idx];
+    if (value < 0 && line) {
+      const cap = remainingOut(line, idx);
+      if (cap !== null && Math.abs(value) > cap) {
+        toast.error(`Out dibatasi sisa stok batch (maks ${cap})`);
+        writeSignedQty(idx, cap === 0 ? 0 : -cap);
+        return;
+      }
+    }
+    writeSignedQty(idx, value);
   }
 
   function save(nextStatus: Adjustment["status"] = "menunggu_approval") {
@@ -279,7 +309,7 @@ function AdjustmentFormInner() {
           ),
       )
     ) {
-      toast.error("Batch tidak sesuai dengan customer barang");
+      toast.error("Batch tidak tersedia untuk barang ini");
       return;
     }
     const requestedOut = new Map<string, number>();
@@ -437,10 +467,10 @@ function AdjustmentFormInner() {
         </div>
         <div className="space-y-1.5">
           <Label>Keterangan</Label>
-          <Input
+          <ResponsiveInput
             value={keterangan}
             disabled={readOnly}
-            onChange={(e) => setKeterangan(e.target.value)}
+            onChange={setKeterangan}
           />
         </div>
       </div>
@@ -494,7 +524,7 @@ function AdjustmentFormInner() {
               </Button>
             </div>
           )}
-          <table className={tableShellClass}>
+          <table className={cn(tableShellClass, "min-w-[1180px]")}>
             <colgroup>
               {colGroupAdjustmentLines.map((width, index) => (
                 <col key={index} className={width} />
@@ -541,11 +571,7 @@ function AdjustmentFormInner() {
                       <SearchableCombobox
                         items={lotsFor(l).map((lot) => ({
                           value: `${lot.btbId}:${lot.gudangId}:${lot.batchCustomer}`,
-                          label: btbStockLabel(
-                            lot,
-                            lotsFor(l),
-                            gudangMap[lot.gudangId]?.nama,
-                          ),
+                          label: adjustmentBatchLabel(lot),
                         }))}
                         value={
                           l.btbId
@@ -559,6 +585,27 @@ function AdjustmentFormInner() {
                               next,
                           );
                           if (!lot) return;
+                          const cap = Math.max(
+                            0,
+                            lot.qty -
+                              lines.reduce((sum, other, otherIdx) => {
+                                if (otherIdx === idx || other.out <= 0) return sum;
+                                const sameLot =
+                                  other.btbId === lot.btbId &&
+                                  other.gudangId === lot.gudangId &&
+                                  other.refId === lot.refId &&
+                                  (other.batchCustomer ?? "") === lot.batchCustomer;
+                                return sameLot ? sum + other.out : sum;
+                              }, 0),
+                          );
+                          const out = Math.min(l.out, cap);
+                          if (l.out > cap) {
+                            toast.error(`Out dibatasi sisa stok batch (maks ${cap})`);
+                          }
+                          setQtyText((prev) => ({
+                            ...prev,
+                            [idx]: String(out > 0 ? -out : l.in > 0 ? l.in : 0),
+                          }));
                           setLines((prev) =>
                             prev.map((row, i) =>
                               i === idx
@@ -568,15 +615,17 @@ function AdjustmentFormInner() {
                                     btbNo: lot.btbNo,
                                     batchCustomer: lot.batchCustomer,
                                     gudangId: lot.gudangId,
+                                    qty: out > 0 ? out : row.in,
+                                    out,
                                   }
                                 : row,
                             ),
                           );
                         }}
-                        placeholder="Cari No. BTB..."
-                        emptyText="Tidak ada batch untuk customer ini"
+                        placeholder="Cari Batch / No. BTB..."
+                        emptyText="Tidak ada batch untuk barang ini"
                         itemNoun="batch"
-                        className="bg-white"
+                        className="w-full bg-white"
                       />
                     )}
                   </td>

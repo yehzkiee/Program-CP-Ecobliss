@@ -207,6 +207,9 @@ export interface StockOpnameLine {
   customerId: string;
   gudangId: string;
   batchCustomer?: string;
+  /** BTB sumber yang sedang dihitung. Kosong hanya pada dokumen lama. */
+  btbId?: string;
+  btbNo?: string;
   qtySistem: number;
   qtyAktual: number;
   selisih: number;

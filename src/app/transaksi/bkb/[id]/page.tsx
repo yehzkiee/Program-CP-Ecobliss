@@ -9,8 +9,9 @@ import { BackLink, PageHeader } from "@/components/shared/page-header";
 import { DetailField } from "@/components/shared/detail-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResponsiveInput } from "@/components/ui/responsive-input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { ResponsiveTextarea } from "@/components/ui/responsive-textarea";
 import { SearchableCombobox } from "@/components/ui/combobox";
 import {
   Select,
@@ -279,9 +280,7 @@ export default function BkbFormPage() {
   const [lineItems, setLineItems] = useState<MaterialDraft[]>(() =>
     collapseDrafts(existing?.items ?? [], (line) => line.itemId),
   );
-  const [lineFgs, setLineFgs] = useState<FgDraft[]>(() =>
-    collapseDrafts(existing?.fgs ?? [], (line) => line.fgId),
-  );
+  const [lineFgs, setLineFgs] = useState<FgDraft[]>(existing?.fgs ?? []);
   const [fotoBukti, setFotoBukti] = useState<UploadedFile[]>(
     (existing?.fotoBukti ?? []).map((dataUrl, i) => ({
       id: `foto-${i}`,
@@ -433,7 +432,12 @@ export default function BkbFormPage() {
   const fgLots = useMemo(() => {
     const lots: FgLotOption[] = [];
     for (const lot of stockForCustomer) {
-      if (lot.jenis !== "fg" || lot.qty <= 0) continue;
+      if (lot.jenis !== "fg") continue;
+      const qtySisa =
+        typeof lot.qty === "number" && Number.isFinite(lot.qty)
+          ? lot.qty
+          : Number(lot.qty) || 0;
+      if (qtySisa <= 0) continue;
       const line = btbs
         .find((doc) => doc.id === lot.btbId)
         ?.fgs.find((row) => row.fgId === lot.refId);
@@ -446,7 +450,7 @@ export default function BkbFormPage() {
         batchCustomer: lot.batchCustomer,
         satuan: line?.satuan || findFinishGood(lot.refId, finishGoods)?.uom1 || "",
         gudangId: lot.gudangId,
-        qtySisa: lot.qty,
+        qtySisa,
       });
     }
     return lots;
@@ -466,18 +470,6 @@ export default function BkbFormPage() {
       ]),
     );
   }, [materialLots]);
-
-  const fgGroups = useMemo(() => {
-    const byFg = new Map<string, FgLotOption[]>();
-    for (const lot of fgLots) {
-      const list = byFg.get(lot.fgId) ?? [];
-      list.push(lot);
-      byFg.set(lot.fgId, list);
-    }
-    return new Map(
-      [...byFg.entries()].map(([fgId, lots]) => [fgId, groupByBatch(fgId, lots)]),
-    );
-  }, [fgLots]);
 
   function allocateFromSources(
     jenis: "item" | "fg",
@@ -546,7 +538,7 @@ export default function BkbFormPage() {
     }
 
     setLineItems(collapseDrafts(newItems, (line) => line.itemId));
-    setLineFgs(collapseDrafts(newFgs, (line) => line.fgId));
+    setLineFgs(newFgs);
     toast.success(`BOM diterapkan ×${bomMultiplier}.`);
   }
 
@@ -574,23 +566,23 @@ export default function BkbFormPage() {
   }
 
   function addManualFg() {
-    const src = sources.find((s) => s.jenis === "fg");
-    if (!src) {
-      toast.error("Tidak ada stok FG di gudang ini");
+    const lot = fgLots.find((row) => isGudangFg(row.gudangId));
+    if (!lot) {
+      toast.error("Tidak ada stok FG di Gudang FG");
       return;
     }
     setLineFgs([
       ...lineFgs,
       {
-        fgId: src.refId,
-        lotKey: batchGroupKey(src.refId, src.batchCustomer, src.gudangId),
-        btbId: src.btbId,
-        btbNo: src.btbNo,
-        btbTanggalTerima: src.tanggalTerima,
-        batchCustomer: src.batchCustomer,
+        fgId: lot.fgId,
+        lotKey: lot.key,
+        btbId: lot.btbId,
+        btbNo: lot.btbNo,
+        btbTanggalTerima: lot.tanggalTerima,
+        batchCustomer: lot.batchCustomer,
         qty: 1,
-        satuan: src.satuan,
-        gudangId: src.gudangId,
+        satuan: lot.satuan,
+        gudangId: lot.gudangId,
         keterangan: "",
       },
     ]);
@@ -606,7 +598,7 @@ export default function BkbFormPage() {
     setBomId(existing.bomId ?? "");
     setBomMultiplier(existing.bomMultiplier ?? 1);
     setLineItems(collapseDrafts(existing.items, (line) => line.itemId));
-    setLineFgs(collapseDrafts(existing.fgs, (line) => line.fgId));
+    setLineFgs(existing.fgs);
     setFotoBukti(
       (existing.fotoBukti ?? []).map((dataUrl, i) => ({
         id: `foto-${i}`,
@@ -627,8 +619,61 @@ export default function BkbFormPage() {
     return materialGroups.get(itemId) ?? [];
   }
 
-  function groupsForFg(fgId: string) {
-    return fgGroups.get(fgId) ?? [];
+  function isGudangFg(gudangId: string) {
+    return gudangMap[gudangId]?.tipe === "fg";
+  }
+
+  function fgBtbLots(fgId: string) {
+    return fgLots
+      .filter((lot) => lot.fgId === fgId && isGudangFg(lot.gudangId))
+      .sort(
+        (a, b) =>
+          a.tanggalTerima.localeCompare(b.tanggalTerima) ||
+          a.btbNo.localeCompare(b.btbNo),
+      );
+  }
+
+  /**
+   * `[No. BTB] - [Tgl Terima / Batch]` + qty untuk badge.
+   * Label string tetap `[No. BTB] - [Tgl] - (Stok: Qty)` untuk filter/nilai terpilih.
+   */
+  function fgBtbSumberParts(lot: FgLotOption) {
+    const no = (lot.btbNo ?? "").trim() || "-";
+    const tanggal = lot.tanggalTerima
+      ? formatDateShort(lot.tanggalTerima)
+      : "";
+    const batch = (
+      batchLabel(lot.batchCustomer, btbs) ||
+      lot.batchCustomer ||
+      ""
+    ).trim();
+    const middle = tanggal || batch || "-";
+    const qty =
+      typeof lot.qtySisa === "number" && Number.isFinite(lot.qtySisa)
+        ? lot.qtySisa
+        : Number(lot.qtySisa) || 0;
+    const primary = `${no} - ${middle}`;
+    return {
+      primary,
+      qty,
+      label: `${primary} - (Stok: ${qty})`,
+    };
+  }
+
+  function resolveFgLot(line: FgDraft) {
+    const lots = fgBtbLots(line.fgId);
+    if (line.lotKey) {
+      const byKey = lots.find((lot) => lot.key === line.lotKey);
+      if (byKey) return byKey;
+    }
+    return (
+      lots.find(
+        (lot) =>
+          lot.btbId === line.btbId &&
+          lot.gudangId === line.gudangId &&
+          lot.batchCustomer === line.batchCustomer,
+      ) ?? null
+    );
   }
 
   function resolveMaterialGroup(line: MaterialDraft) {
@@ -647,25 +692,49 @@ export default function BkbFormPage() {
   }
 
   function resolveFgGroup(line: FgDraft) {
-    const groups = groupsForFg(line.fgId);
-    if (line.lotKey) {
-      const byKey = groups.find((group) => group.key === line.lotKey);
-      if (byKey) return byKey;
-    }
-    return (
-      groups.find(
-        (group) =>
-          group.batchCustomer === line.batchCustomer &&
-          group.gudangId === line.gudangId,
-      ) ?? null
-    );
+    const lot = resolveFgLot(line);
+    if (!lot) return null;
+    return {
+      key: lot.key,
+      batchCustomer: lot.batchCustomer,
+      gudangId: lot.gudangId,
+      satuan: lot.satuan,
+      qtySisa: lot.qtySisa,
+      tanggalTerima: lot.tanggalTerima,
+      lots: [lot],
+    };
   }
 
-  function batchOptionLabel(group: { batchCustomer: string; gudangId: string; qtySisa: number }) {
-    return formatBatchOptionLabel(
-      batchLabel(group.batchCustomer, btbs),
-      gudangMap[group.gudangId]?.nama ?? "",
-      group.qtySisa,
+  function batchOptionParts(group: {
+    batchCustomer: string;
+    gudangId: string;
+    qtySisa: number;
+  }) {
+    const name = batchLabel(group.batchCustomer, btbs);
+    const gudang = gudangMap[group.gudangId]?.nama ?? "";
+    const title = name.trim() || "Batch";
+    const place = gudang.trim() || "-";
+    return {
+      primary: `${title} - ${place}`,
+      qty: group.qtySisa,
+      label: formatBatchOptionLabel(name, gudang, group.qtySisa),
+    };
+  }
+
+  function StockOptionRow({
+    primary,
+    qty,
+  }: {
+    primary: string;
+    qty: number;
+  }) {
+    return (
+      <span className="flex w-full items-center justify-between gap-3">
+        <span className="min-w-0 whitespace-normal break-words">{primary}</span>
+        <span className="inline-flex shrink-0 items-center rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-amber-900 ring-1 ring-inset ring-amber-200/80">
+          (Stok: {qty})
+        </span>
+      </span>
     );
   }
 
@@ -953,20 +1022,17 @@ export default function BkbFormPage() {
             </div>
             <div className="space-y-2">
               <Label>No. SPK</Label>
-              <Input
-                value={noSpk}
-                onChange={(e) => setNoSpk(e.target.value)}
-              />
+              <ResponsiveInput value={noSpk} onChange={setNoSpk} />
             </div>
             <div className="space-y-2">
               <Label>No PO</Label>
-              <Input value={noPo} onChange={(e) => setNoPo(e.target.value)} />
+              <ResponsiveInput value={noPo} onChange={setNoPo} />
             </div>
             <div className="space-y-2 sm:col-span-2 lg:col-span-4">
               <Label>Keterangan</Label>
-              <Textarea
+              <ResponsiveTextarea
                 value={keterangan}
-                onChange={(e) => setKeterangan(e.target.value)}
+                onChange={setKeterangan}
                 rows={3}
               />
             </div>
@@ -1073,9 +1139,9 @@ export default function BkbFormPage() {
             ) : (
               <div
                 key={idx}
-                className="grid gap-2 rounded-lg border p-3 lg:grid-cols-8"
+                className="grid grid-cols-12 items-end gap-3 rounded-lg border p-3"
               >
-                <div className="lg:col-span-2">
+                <div className="col-span-12 min-w-0 sm:col-span-5 lg:col-span-3">
                   <Label className="text-xs">Nama Material</Label>
                   <SearchableCombobox
                     items={itemSelectItems}
@@ -1114,13 +1180,18 @@ export default function BkbFormPage() {
                     itemNoun="material"
                   />
                 </div>
-                <div className="min-w-0 lg:col-span-3">
+                <div className="col-span-12 min-w-0 sm:col-span-7 lg:col-span-5">
                   <Label className="text-xs">Batch</Label>
                   <SearchableCombobox
-                    items={groupsForItem(line.itemId).map((group) => ({
-                      value: group.key,
-                      label: batchOptionLabel(group),
-                    }))}
+                    items={groupsForItem(line.itemId).map((group) => {
+                      const parts = batchOptionParts(group);
+                      return {
+                        value: group.key,
+                        label: parts.label,
+                        primary: parts.primary,
+                        qty: parts.qty,
+                      };
+                    })}
                     value={resolveMaterialGroup(line)?.key ?? ""}
                     onValueChange={(next) => {
                       const group = groupsForItem(line.itemId).find(
@@ -1143,9 +1214,13 @@ export default function BkbFormPage() {
                     placeholder="Pilih batch"
                     emptyText="Tidak ada batch untuk customer ini"
                     itemNoun="batch"
+                    popupClassName="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,36rem)]"
+                    renderItem={(item) => (
+                      <StockOptionRow primary={item.primary} qty={item.qty} />
+                    )}
                   />
                 </div>
-                <div>
+                <div className="col-span-4 min-w-[5rem] sm:col-span-3 lg:col-span-1">
                   <Label className="text-xs">Qty</Label>
                   <Input
                     type="number"
@@ -1162,10 +1237,10 @@ export default function BkbFormPage() {
                     }}
                   />
                 </div>
-                <div className="min-w-[7rem]">
+                <div className="col-span-6 min-w-[7rem] sm:col-span-3 lg:col-span-2">
                   <Label className="text-xs">Tgl Terima BTB</Label>
                   <Input
-                    className="min-w-[7rem] tabular-nums"
+                    className="tabular-nums"
                     value={
                       line.btbTanggalTerima
                         ? formatDateShort(line.btbTanggalTerima)
@@ -1174,7 +1249,7 @@ export default function BkbFormPage() {
                     disabled
                   />
                 </div>
-                <div className="flex items-end">
+                <div className="col-span-2 flex items-end justify-end pb-0.5 sm:col-span-1 lg:col-span-1">
                   <Button
                     variant="ghost"
                     size="icon"
@@ -1188,11 +1263,11 @@ export default function BkbFormPage() {
                   </Button>
                 </div>
                 {!qtyPositive(line.qty) ? (
-                  <p className="text-xs text-destructive lg:col-span-8">
+                  <p className="col-span-12 text-xs text-destructive">
                     Qty harus lebih besar dari 0
                   </p>
                 ) : materialQtyOver(idx) ? (
-                  <p className="text-xs text-destructive lg:col-span-8">
+                  <p className="col-span-12 text-xs text-destructive">
                     Qty melebihi stok BTB yang tersedia (Maks:{" "}
                     {formatQty(materialMaxQty(idx) ?? 0)})
                   </p>
@@ -1256,9 +1331,9 @@ export default function BkbFormPage() {
             ) : (
               <div
                 key={idx}
-                className="grid gap-2 rounded-lg border p-3 lg:grid-cols-8"
+                className="grid grid-cols-12 items-end gap-3 rounded-lg border p-3"
               >
-                <div className="lg:col-span-2">
+                <div className="col-span-12 min-w-0 sm:col-span-5 lg:col-span-3">
                   <Label className="text-xs">Nama Finish Good</Label>
                   <SearchableCombobox
                     items={fgSelectItems}
@@ -1266,17 +1341,14 @@ export default function BkbFormPage() {
                     onValueChange={(next) => {
                       const fgId = next ?? "";
                       const fg = findFinishGood(fgId, finishGoods);
-                      const groups = groupsForFg(fgId);
-                      const src =
-                        groups.find((group) => group.gudangId === gudangAsal) ??
-                        groups[0];
+                      const src = fgBtbLots(fgId)[0];
                       const nextLines = [...lineFgs];
                       nextLines[idx] = {
                         ...line,
                         fgId,
                         lotKey: src?.key,
-                        btbId: src?.lots[0]?.btbId ?? "",
-                        btbNo: src?.lots[0]?.btbNo ?? "",
+                        btbId: src?.btbId ?? "",
+                        btbNo: src?.btbNo ?? "",
                         btbTanggalTerima: src?.tanggalTerima ?? "",
                         batchCustomer: src?.batchCustomer ?? "",
                         satuan: src?.satuan ?? fg?.uom1 ?? "",
@@ -1297,38 +1369,47 @@ export default function BkbFormPage() {
                     itemNoun="finish good"
                   />
                 </div>
-                <div className="min-w-0 lg:col-span-3">
-                  <Label className="text-xs">Batch</Label>
+                <div className="col-span-12 min-w-0 sm:col-span-7 lg:col-span-5">
+                  <Label className="text-xs">BTB Sumber</Label>
                   <SearchableCombobox
-                    items={groupsForFg(line.fgId).map((group) => ({
-                      value: group.key,
-                      label: batchOptionLabel(group),
-                    }))}
-                    value={resolveFgGroup(line)?.key ?? ""}
+                    items={fgBtbLots(line.fgId).map((lot) => {
+                      const parts = fgBtbSumberParts(lot);
+                      return {
+                        value: lot.key,
+                        label: parts.label,
+                        primary: parts.primary,
+                        qty: parts.qty,
+                      };
+                    })}
+                    value={resolveFgLot(line)?.key ?? ""}
                     onValueChange={(next) => {
-                      const group = groupsForFg(line.fgId).find(
+                      const lot = fgBtbLots(line.fgId).find(
                         (row) => row.key === next,
                       );
-                      if (!group) return;
+                      if (!lot) return;
                       const nextLines = [...lineFgs];
                       nextLines[idx] = {
                         ...line,
-                        lotKey: group.key,
-                        btbId: group.lots[0]?.btbId ?? "",
-                        btbNo: group.lots[0]?.btbNo ?? "",
-                        btbTanggalTerima: group.tanggalTerima,
-                        batchCustomer: group.batchCustomer,
-                        satuan: group.satuan,
-                        gudangId: group.gudangId,
+                        lotKey: lot.key,
+                        btbId: lot.btbId,
+                        btbNo: lot.btbNo,
+                        btbTanggalTerima: lot.tanggalTerima,
+                        batchCustomer: lot.batchCustomer,
+                        satuan: lot.satuan,
+                        gudangId: lot.gudangId,
                       };
                       setLineFgs(nextLines);
                     }}
-                    placeholder="Pilih batch"
-                    emptyText="Tidak ada batch untuk customer ini"
-                    itemNoun="batch"
+                    placeholder="Pilih BTB"
+                    emptyText="Tidak ada stok di Gudang FG"
+                    itemNoun="BTB"
+                    popupClassName="min-w-[var(--anchor-width)] w-max max-w-[min(100vw-2rem,36rem)]"
+                    renderItem={(item) => (
+                      <StockOptionRow primary={item.primary} qty={item.qty} />
+                    )}
                   />
                 </div>
-                <div>
+                <div className="col-span-4 min-w-[5rem] sm:col-span-3 lg:col-span-1">
                   <Label className="text-xs">Qty</Label>
                   <Input
                     type="number"
@@ -1345,10 +1426,10 @@ export default function BkbFormPage() {
                     }}
                   />
                 </div>
-                <div className="min-w-[7rem]">
+                <div className="col-span-6 min-w-[7rem] sm:col-span-3 lg:col-span-2">
                   <Label className="text-xs">Tgl Terima BTB</Label>
                   <Input
-                    className="min-w-[7rem] tabular-nums"
+                    className="tabular-nums"
                     value={
                       line.btbTanggalTerima
                         ? formatDateShort(line.btbTanggalTerima)
@@ -1357,7 +1438,7 @@ export default function BkbFormPage() {
                     disabled
                   />
                 </div>
-                <div className="flex items-end">
+                <div className="col-span-2 flex items-end justify-end pb-0.5 sm:col-span-1 lg:col-span-1">
                   <Button
                     variant="ghost"
                     size="icon"
@@ -1371,11 +1452,11 @@ export default function BkbFormPage() {
                   </Button>
                 </div>
                 {!qtyPositive(line.qty) ? (
-                  <p className="text-xs text-destructive lg:col-span-8">
+                  <p className="col-span-12 text-xs text-destructive">
                     Qty harus lebih besar dari 0
                   </p>
                 ) : fgQtyOver(idx) ? (
-                  <p className="text-xs text-destructive lg:col-span-8">
+                  <p className="col-span-12 text-xs text-destructive">
                     Qty melebihi stok BTB yang tersedia (Maks:{" "}
                     {formatQty(fgMaxQty(idx) ?? 0)})
                   </p>

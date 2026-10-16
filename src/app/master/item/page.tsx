@@ -9,7 +9,7 @@ import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBad
 import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader, StatusBadge } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { ResponsiveInput } from "@/components/ui/responsive-input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -56,31 +56,251 @@ const blank = (): MaterialItem => ({
   status: "aktif",
 });
 
-function customerInitials(nama: string): string {
-  const cleaned = nama.replace(/^(PT|CV|UD)\.?\s+/i, "").trim();
-  const parts = cleaned.split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "XX";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-}
+type CreateDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  customers: Customer[];
+  fallbackCustomerId: string;
+  onSave: (row: MaterialItem) => void;
+};
 
-function generateBatchCustomer(
-  customerId: string,
-  customers: Customer[],
-  items: MaterialItem[],
-  excludeItemId?: string,
-): string {
-  const customer = customers.find((c) => c.id === customerId);
-  const initials = customerInitials(customer?.nama ?? "XX");
-  const prefix = `BC-${initials}-`;
-  const seqs = items
-    .filter((i) => i.customerId === customerId && i.id !== excludeItemId)
-    .map((i) => {
-      const match = i.batchCustomer.match(/-(\d+)$/);
-      return match ? Number(match[1]) : 0;
+function MaterialCreateDialog({
+  open,
+  onOpenChange,
+  customers,
+  fallbackCustomerId,
+  onSave,
+}: CreateDialogProps) {
+  const [form, setForm] = useState<MaterialItem>(blank());
+
+  const customerItems = useMemo(
+    () =>
+      customers.map((customer) => ({
+        value: customer.id,
+        label: customer.nama,
+      })),
+    [customers],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    setForm({
+      ...blank(),
+      id: uid("item"),
+      customerId: fallbackCustomerId,
     });
-  const next = (seqs.length ? Math.max(...seqs) : 0) + 1;
-  return `${prefix}${String(next).padStart(2, "0")}`;
+  }, [open, fallbackCustomerId]);
+
+  function save() {
+    if (!form.kode || !form.nama || !form.customerId) {
+      toast.error("Lengkapi kode, nama, dan customer");
+      return;
+    }
+    onSave({
+      ...form,
+      batchCustomer: form.batchCustomer.trim(),
+      konversi1: 1,
+    });
+    onOpenChange(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Tambah Material</DialogTitle>
+        </DialogHeader>
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="material-kode">Kode Material</Label>
+            <ResponsiveInput
+              id="material-kode"
+              value={form.kode}
+              onChange={(kode) => setForm((prev) => ({ ...prev, kode }))}
+            />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="material-nama">Nama Material</Label>
+            <ResponsiveInput
+              id="material-nama"
+              value={form.nama}
+              onChange={(nama) => setForm((prev) => ({ ...prev, nama }))}
+            />
+          </div>
+          <div className="grid min-w-0 grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
+            <div className="min-w-0 space-y-2">
+              <Label>Customer</Label>
+              <SearchableCombobox
+                items={customerItems}
+                value={form.customerId || fallbackCustomerId}
+                onValueChange={(next) =>
+                  setForm((prev) => ({ ...prev, customerId: next ?? "" }))
+                }
+                filterItem={(item, query) =>
+                  item.label.toLowerCase().includes(query.toLowerCase())
+                }
+                clearValueOnInput={false}
+                preserveSearchQuery
+                placeholder="Cari nama customer..."
+                emptyText="Tidak ada customer yang cocok"
+                itemNoun="customer"
+                className="w-full bg-white"
+              />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <Label htmlFor="material-batch-customer">Batch Customer</Label>
+              <ResponsiveInput
+                id="material-batch-customer"
+                className="w-full bg-white"
+                value={form.batchCustomer}
+                onChange={(batchCustomer) =>
+                  setForm((prev) => ({ ...prev, batchCustomer }))
+                }
+              />
+            </div>
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <p className="text-sm font-medium text-slate-700">
+              Konversi UOM (3 tingkatan)
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>UOM 1</Label>
+            <Select
+              value={form.uom1}
+              onValueChange={(v) =>
+                setForm((prev) => ({ ...prev, uom1: v ?? "PCS" }))
+              }
+              items={UOM_OPTIONS.map((u) => ({ value: u, label: u }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih UOM 1" />
+              </SelectTrigger>
+              <SelectContent>
+                {UOM_OPTIONS.map((u) => (
+                  <SelectItem key={u} value={u}>
+                    {u}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="hidden sm:block" aria-hidden />
+          <div className="space-y-2">
+            <Label>UOM 2</Label>
+            <Select
+              value={form.uom2 || UOM_NONE}
+              onValueChange={(v) =>
+                setForm((prev) => ({
+                  ...prev,
+                  uom2: !v || v === UOM_NONE ? "" : v,
+                  konversi2: !v || v === UOM_NONE ? 0 : prev.konversi2 || 1,
+                }))
+              }
+              items={[
+                { value: UOM_NONE, label: "—" },
+                ...UOM_OPTIONS.map((u) => ({ value: u, label: u })),
+              ]}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Opsional" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={UOM_NONE}>—</SelectItem>
+                {UOM_OPTIONS.map((u) => (
+                  <SelectItem key={u} value={u}>
+                    {u}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Konversi UOM 2</Label>
+            <ResponsiveInput
+              type="number"
+              min={0}
+              disabled={!form.uom2}
+              value={form.konversi2}
+              onChange={(raw) =>
+                setForm((prev) => ({ ...prev, konversi2: Number(raw) || 0 }))
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>UOM 3</Label>
+            <Select
+              value={form.uom3 || UOM_NONE}
+              onValueChange={(v) =>
+                setForm((prev) => ({
+                  ...prev,
+                  uom3: !v || v === UOM_NONE ? "" : v,
+                  konversi3: !v || v === UOM_NONE ? 0 : prev.konversi3 || 1,
+                }))
+              }
+              items={[
+                { value: UOM_NONE, label: "—" },
+                ...UOM_OPTIONS.map((u) => ({ value: u, label: u })),
+              ]}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Opsional" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={UOM_NONE}>—</SelectItem>
+                {UOM_OPTIONS.map((u) => (
+                  <SelectItem key={u} value={u}>
+                    {u}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Konversi UOM 3</Label>
+            <ResponsiveInput
+              type="number"
+              min={0}
+              disabled={!form.uom3}
+              value={form.konversi3}
+              onChange={(raw) =>
+                setForm((prev) => ({ ...prev, konversi3: Number(raw) || 0 }))
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Status</Label>
+            <Select
+              value={form.status}
+              onValueChange={(v) =>
+                setForm((prev) => ({ ...prev, status: v as StatusAktif }))
+              }
+              items={[
+                { value: "aktif", label: "Aktif" },
+                { value: "nonaktif", label: "Nonaktif" },
+              ]}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="aktif">Aktif</SelectItem>
+                <SelectItem value="nonaktif">Nonaktif</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Batal
+          </Button>
+          <Button className="bg-emerald-700 hover:bg-emerald-800" onClick={save}>
+            Simpan
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 export default function ItemPage() {
@@ -91,8 +311,6 @@ export default function ItemPage() {
   const [filterCust, setFilterCust] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<MaterialItem>(blank());
-  const [batchEdited, setBatchEdited] = useState(false);
 
   const custMap = useMemo(
     () => Object.fromEntries(customers.map((c) => [c.id, c])),
@@ -104,12 +322,15 @@ export default function ItemPage() {
 
   useEffect(() => {
     if (!fallbackCustomerId) return;
-    for (const item of items) {
-      if (!item.customerId || !custMap[item.customerId]) {
-        upsert({ ...item, customerId: fallbackCustomerId });
-      }
+    const broken = items.filter(
+      (item) => !item.customerId || !custMap[item.customerId],
+    );
+    if (broken.length === 0) return;
+    for (const item of broken) {
+      upsert({ ...item, customerId: fallbackCustomerId });
     }
-  }, [items, custMap, fallbackCustomerId, upsert]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot repair
+  }, [fallbackCustomerId, custMap, upsert]);
 
   function resolveCustomerNama(customerId: string) {
     const nama = custMap[customerId]?.nama?.trim();
@@ -145,32 +366,21 @@ export default function ItemPage() {
     [],
   );
 
-  function openCreate() {
-    const customerId = fallbackCustomerId;
-    setBatchEdited(false);
-    setForm({
-      ...blank(),
-      id: uid("item"),
-      customerId,
-      batchCustomer: customerId
-        ? generateBatchCustomer(customerId, customers, items)
-        : "",
-    });
-    setOpen(true);
-  }
-
-  function save() {
-    if (!form.kode || !form.nama || !form.customerId) {
-      toast.error("Lengkapi kode, nama, dan customer");
-      return;
-    }
-    const batchCustomer =
-      form.batchCustomer ||
-      generateBatchCustomer(form.customerId, customers, items);
-    upsert({ ...form, batchCustomer, konversi1: 1 });
-    toast.success("Material disimpan");
-    setOpen(false);
-  }
+  const exportRows = useMemo(
+    () =>
+      filtered.map((i) => ({
+        kode: i.kode,
+        nama: i.nama,
+        customer: resolveCustomerNama(i.customerId),
+        uom1: i.uom1 ? `${i.uom1} (${i.konversi1})` : "-",
+        uom2: i.uom2 ? `${i.uom2} (${i.konversi2})` : "-",
+        uom3: i.uom3 ? `${i.uom3} (${i.konversi3})` : "-",
+        batch: i.batchCustomer || "-",
+        status: formatStatusLabel(i.status),
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filtered, custMap, fallbackCustomerNama],
+  );
 
   return (
     <div>
@@ -178,7 +388,10 @@ export default function ItemPage() {
         title="DB Material"
         description="Master material dengan customer, UOM, batch, dan status."
         action={
-          <Button className="bg-emerald-700 hover:bg-emerald-800" onClick={openCreate}>
+          <Button
+            className="bg-emerald-700 hover:bg-emerald-800"
+            onClick={() => setOpen(true)}
+          >
             Tambah Material
           </Button>
         }
@@ -234,16 +447,7 @@ export default function ItemPage() {
         </Select>
         <ExportExcelButton
           page="Material"
-          rows={filtered.map((i) => ({
-            kode: i.kode,
-            nama: i.nama,
-            customer: resolveCustomerNama(i.customerId),
-            uom1: i.uom1 ? `${i.uom1} (${i.konversi1})` : "-",
-            uom2: i.uom2 ? `${i.uom2} (${i.konversi2})` : "-",
-            uom3: i.uom3 ? `${i.uom3} (${i.konversi3})` : "-",
-            batch: i.batchCustomer || "-",
-            status: formatStatusLabel(i.status),
-          }))}
+          rows={exportRows}
           headers={{
             kode: "Kode",
             nama: "Nama",
@@ -316,211 +520,16 @@ export default function ItemPage() {
         </Table>
       </div>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Tambah Material</DialogTitle>
-          </DialogHeader>
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Kode Material</Label>
-              <Input
-                value={form.kode}
-                onChange={(e) => setForm({ ...form, kode: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Nama Material</Label>
-              <Input
-                value={form.nama}
-                onChange={(e) => setForm({ ...form, nama: e.target.value })}
-              />
-            </div>
-            <div className="grid min-w-0 grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
-              <div className="min-w-0 space-y-2">
-                <Label>Customer</Label>
-                <SearchableCombobox
-                  items={customers.map((customer) => ({
-                    value: customer.id,
-                    label: customer.nama,
-                  }))}
-                  value={form.customerId || fallbackCustomerId}
-                  onValueChange={(next) => {
-                    const customerId = next ?? "";
-                    const keepManual = batchEdited && form.batchCustomer.trim() !== "";
-                    setForm({
-                      ...form,
-                      customerId,
-                      batchCustomer: keepManual
-                        ? form.batchCustomer
-                        : customerId
-                          ? generateBatchCustomer(customerId, customers, items)
-                          : "",
-                    });
-                  }}
-                  filterItem={(item, query) =>
-                    item.label.toLowerCase().includes(query.toLowerCase())
-                  }
-                  clearValueOnInput={false}
-                  preserveSearchQuery
-                  placeholder="Cari nama customer..."
-                  emptyText="Tidak ada customer yang cocok"
-                  itemNoun="customer"
-                  className="w-full bg-white"
-                />
-              </div>
-              <div className="min-w-0 space-y-2">
-                <Label htmlFor="material-batch-customer">Batch Customer</Label>
-                <Input
-                  id="material-batch-customer"
-                  className="w-full"
-                  value={form.batchCustomer}
-                  onChange={(e) => {
-                    setBatchEdited(true);
-                    setForm({ ...form, batchCustomer: e.target.value });
-                  }}
-                />
-              </div>
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <p className="text-sm font-medium text-slate-700">
-                Konversi UOM (3 tingkatan)
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label>UOM 1</Label>
-              <Select
-                value={form.uom1}
-                onValueChange={(v) => setForm({ ...form, uom1: v ?? "PCS" })}
-                items={UOM_OPTIONS.map((u) => ({ value: u, label: u }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih UOM 1" />
-                </SelectTrigger>
-                <SelectContent>
-                  {UOM_OPTIONS.map((u) => (
-                    <SelectItem key={u} value={u}>
-                      {u}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="hidden sm:block" aria-hidden />
-            <div className="space-y-2">
-              <Label>UOM 2</Label>
-              <Select
-                value={form.uom2 || UOM_NONE}
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    uom2: !v || v === UOM_NONE ? "" : v,
-                    konversi2: !v || v === UOM_NONE ? 0 : form.konversi2 || 1,
-                  })
-                }
-                items={[
-                  { value: UOM_NONE, label: "—" },
-                  ...UOM_OPTIONS.map((u) => ({ value: u, label: u })),
-                ]}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Opsional" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UOM_NONE}>—</SelectItem>
-                  {UOM_OPTIONS.map((u) => (
-                    <SelectItem key={u} value={u}>
-                      {u}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Konversi UOM 2</Label>
-              <Input
-                type="number"
-                min={0}
-                disabled={!form.uom2}
-                value={form.konversi2}
-                onChange={(e) =>
-                  setForm({ ...form, konversi2: Number(e.target.value) || 0 })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>UOM 3</Label>
-              <Select
-                value={form.uom3 || UOM_NONE}
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    uom3: !v || v === UOM_NONE ? "" : v,
-                    konversi3: !v || v === UOM_NONE ? 0 : form.konversi3 || 1,
-                  })
-                }
-                items={[
-                  { value: UOM_NONE, label: "—" },
-                  ...UOM_OPTIONS.map((u) => ({ value: u, label: u })),
-                ]}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Opsional" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UOM_NONE}>—</SelectItem>
-                  {UOM_OPTIONS.map((u) => (
-                    <SelectItem key={u} value={u}>
-                      {u}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Konversi UOM 3</Label>
-              <Input
-                type="number"
-                min={0}
-                disabled={!form.uom3}
-                value={form.konversi3}
-                onChange={(e) =>
-                  setForm({ ...form, konversi3: Number(e.target.value) || 0 })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select
-                value={form.status}
-                onValueChange={(v) =>
-                  setForm({ ...form, status: v as StatusAktif })
-                }
-                items={[
-                  { value: "aktif", label: "Aktif" },
-                  { value: "nonaktif", label: "Nonaktif" },
-                ]}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="aktif">Aktif</SelectItem>
-                  <SelectItem value="nonaktif">Nonaktif</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Batal
-            </Button>
-            <Button className="bg-emerald-700 hover:bg-emerald-800" onClick={save}>
-              Simpan
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <MaterialCreateDialog
+        open={open}
+        onOpenChange={setOpen}
+        customers={customers}
+        fallbackCustomerId={fallbackCustomerId}
+        onSave={(row) => {
+          upsert(row);
+          toast.success("Material disimpan");
+        }}
+      />
     </div>
   );
 }

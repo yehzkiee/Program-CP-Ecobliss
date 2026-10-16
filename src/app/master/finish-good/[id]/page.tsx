@@ -15,6 +15,7 @@ import { DetailField, DocLink } from "@/components/shared/detail-field";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResponsiveInput } from "@/components/ui/responsive-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -34,38 +35,11 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getLatestBomRevision } from "@/lib/mock/data";
 import { useDataStore } from "@/lib/store";
-import type { Customer, FinishGood, StatusAktif } from "@/lib/types";
+import type { FinishGood, StatusAktif } from "@/lib/types";
 import { formatDateID } from "@/lib/utils";
 
 const UOM_OPTIONS = ["PCS", "BOX", "SET", "PACK", "ROLL"] as const;
 const UOM_NONE = "-";
-
-function customerInitials(nama: string): string {
-  const cleaned = nama.replace(/^(PT|CV|UD)\.?\s+/i, "").trim();
-  const parts = cleaned.split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "XX";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-}
-
-function generateBatchCustomer(
-  customerId: string,
-  customers: Customer[],
-  finishGoods: FinishGood[],
-  excludeId?: string,
-): string {
-  const customer = customers.find((c) => c.id === customerId);
-  const initials = customerInitials(customer?.nama ?? "XX");
-  const prefix = `BC-${initials}-FG`;
-  const seqs = finishGoods
-    .filter((f) => f.customerId === customerId && f.id !== excludeId)
-    .map((f) => {
-      const match = (f.batchCustomer ?? "").match(/FG(\d+)$/i);
-      return match ? Number(match[1]) : 0;
-    });
-  const next = (seqs.length ? Math.max(...seqs) : 0) + 1;
-  return `${prefix}${String(next).padStart(2, "0")}`;
-}
 
 export default function FinishGoodDetailPage() {
   const params = useParams<{ id: string }>();
@@ -116,18 +90,7 @@ export default function FinishGoodDetailPage() {
   const draft = form ?? fg;
 
   function startEdit() {
-    const current = fg!;
-    const batchCustomer =
-      current.batchCustomer?.trim() ||
-      (current.customerId
-        ? generateBatchCustomer(
-            current.customerId,
-            customers,
-            finishGoods,
-            current.id,
-          )
-        : "");
-    setForm({ ...current, batchCustomer });
+    setForm({ ...fg! });
     setEditing(true);
   }
 
@@ -136,15 +99,7 @@ export default function FinishGoodDetailPage() {
       toast.error("Lengkapi kode, nama, dan customer");
       return;
     }
-    const batchCustomer =
-      form.batchCustomer.trim() ||
-      generateBatchCustomer(
-        form.customerId,
-        customers,
-        finishGoods,
-        form.id,
-      );
-    upsert({ ...form, batchCustomer });
+    upsert({ ...form, batchCustomer: form.batchCustomer.trim() });
     toast.success("Finish Good disimpan");
     setEditing(false);
     setForm(null);
@@ -208,17 +163,19 @@ export default function FinishGoodDetailPage() {
           {editing ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-1.5">
-                <Label>Kode FG</Label>
-                <Input
+                <Label htmlFor="edit-finish-good-kode">Kode FG</Label>
+                <ResponsiveInput
+                  id="edit-finish-good-kode"
                   value={draft.kode}
-                  onChange={(e) => setForm({ ...draft, kode: e.target.value })}
+                  onChange={(kode) => setForm({ ...draft, kode })}
                 />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <Label>Nama FG</Label>
-                <Input
+                <Label htmlFor="edit-finish-good-nama">Nama FG</Label>
+                <ResponsiveInput
+                  id="edit-finish-good-nama"
                   value={draft.nama}
-                  onChange={(e) => setForm({ ...draft, nama: e.target.value })}
+                  onChange={(nama) => setForm({ ...draft, nama })}
                 />
               </div>
               <div className="space-y-1.5">
@@ -241,13 +198,14 @@ export default function FinishGoodDetailPage() {
                 <Label htmlFor="edit-finish-good-batch-customer">
                   Batch Customer
                 </Label>
-                <Input
+                <ResponsiveInput
                   id="edit-finish-good-batch-customer"
                   type="text"
-                  className="w-full"
+                  className="w-full bg-white"
+                  placeholder="Masukkan batch customer"
                   value={draft.batchCustomer}
-                  onChange={(e) =>
-                    setForm({ ...draft, batchCustomer: e.target.value })
+                  onChange={(batchCustomer) =>
+                    setForm({ ...draft, batchCustomer })
                   }
                 />
               </div>

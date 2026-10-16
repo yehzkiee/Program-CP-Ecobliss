@@ -15,6 +15,7 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { SearchableCombobox } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResponsiveInput } from "@/components/ui/responsive-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -104,7 +105,7 @@ export default function ItemDetailPage() {
       toast.error("Lengkapi kode, nama, dan customer");
       return;
     }
-    upsert(form);
+    upsert({ ...form, batchCustomer: form.batchCustomer.trim() });
     toast.success("Material disimpan");
     setEditing(false);
     setForm(null);
@@ -168,17 +169,19 @@ export default function ItemDetailPage() {
           {editing ? (
             <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-1.5">
-                <Label>Kode Material</Label>
-                <Input
+                <Label htmlFor="edit-material-kode">Kode Material</Label>
+                <ResponsiveInput
+                  id="edit-material-kode"
                   value={draft.kode}
-                  onChange={(e) => setForm({ ...draft, kode: e.target.value })}
+                  onChange={(kode) => setForm({ ...draft, kode })}
                 />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <Label>Nama Material</Label>
-                <Input
+                <Label htmlFor="edit-material-nama">Nama Material</Label>
+                <ResponsiveInput
+                  id="edit-material-nama"
                   value={draft.nama}
-                  onChange={(e) => setForm({ ...draft, nama: e.target.value })}
+                  onChange={(nama) => setForm({ ...draft, nama })}
                 />
               </div>
               <div className="grid min-w-0 grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2 lg:col-span-3">
@@ -206,13 +209,13 @@ export default function ItemDetailPage() {
                 </div>
                 <div className="min-w-0 space-y-1.5">
                   <Label htmlFor="edit-material-batch-customer">Batch Customer</Label>
-                  <Input
+                  <ResponsiveInput
                     id="edit-material-batch-customer"
                     type="text"
-                    className="w-full"
+                    className="w-full bg-white"
                     value={draft.batchCustomer}
-                    onChange={(e) =>
-                      setForm({ ...draft, batchCustomer: e.target.value })
+                    onChange={(batchCustomer) =>
+                      setForm({ ...draft, batchCustomer })
                     }
                   />
                 </div>
