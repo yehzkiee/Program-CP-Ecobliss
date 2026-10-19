@@ -215,7 +215,11 @@ export interface StockOpnameLine {
   selisih: number;
 }
 
-export type OpnameMetode = "per_batch" | "per_item" | "per_gudang";
+export type OpnameMetode =
+  | "per_batch"
+  | "per_item"
+  | "per_gudang"
+  | "per_finish_good";
 
 export interface StockOpname {
   id: string;

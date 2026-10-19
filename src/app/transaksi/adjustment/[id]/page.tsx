@@ -21,6 +21,10 @@ import {
   type BtbBatchStock,
 } from "@/lib/mock/data";
 import { batchLabel } from "@/lib/batches";
+import {
+  buildBarangOptions,
+  filterBarangByKodeNama,
+} from "@/lib/barang-options";
 import { useAuthStore, useDataStore } from "@/lib/store";
 import type { Adjustment, AdjustmentLine } from "@/lib/types";
 import {
@@ -97,29 +101,10 @@ function AdjustmentFormInner() {
     [stockOpnames],
   );
 
-  const productOptions = useMemo(() => {
-    const rows = [
-      ...items
-        .filter((item) => item.status === "aktif")
-        .map((item) => ({
-          value: `item:${item.id}`,
-          label: `${item.kode} - ${item.nama}`,
-          kode: item.kode,
-          nama: item.nama,
-          jenis: "item" as const,
-        })),
-      ...finishGoods
-        .filter((fg) => fg.status === "aktif")
-        .map((fg) => ({
-          value: `fg:${fg.id}`,
-          label: `${fg.kode} - ${fg.nama}`,
-          kode: fg.kode,
-          nama: fg.nama,
-          jenis: "fg" as const,
-        })),
-    ];
-    return rows.sort((a, b) => a.label.localeCompare(b.label, "id"));
-  }, [items, finishGoods]);
+  const productOptions = useMemo(
+    () => buildBarangOptions(items, finishGoods),
+    [items, finishGoods],
+  );
   const pickedProduct = productOptions.find((row) => row.value === picker);
   const gudangMap = useMemo(
     () => Object.fromEntries(gudangList.map((gudang) => [gudang.id, gudang])),
@@ -488,13 +473,7 @@ function AdjustmentFormInner() {
                   items={productOptions}
                   value={picker}
                   onValueChange={setPicker}
-                  filterItem={(item, query) => {
-                    const keyword = query.toLowerCase();
-                    return (
-                      item.kode.toLowerCase().includes(keyword) ||
-                      item.nama.toLowerCase().includes(keyword)
-                    );
-                  }}
+                  filterItem={filterBarangByKodeNama}
                   renderItem={(item) => (
                     <ItemNameWithType
                       jenis={item.jenis}

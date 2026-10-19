@@ -33,6 +33,11 @@ import {
   findItem,
   isTransferGeneratedBtbLine,
 } from "@/lib/mock/data";
+import {
+  buildBarangOptions,
+  compareBarangOption,
+  filterBarangByKodeNama,
+} from "@/lib/barang-options";
 import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
 import { useDataStore } from "@/lib/store";
 import type { AdjustmentStatus, StockRow } from "@/lib/types";
@@ -42,17 +47,6 @@ import {
   formatKodeNama,
   formatQty,
 } from "@/lib/utils";
-
-function filterItemByKodeNama(
-  item: { kode: string; nama: string },
-  query: string,
-) {
-  const keyword = query.toLowerCase();
-  return (
-    item.kode.toLowerCase().includes(keyword) ||
-    item.nama.toLowerCase().includes(keyword)
-  );
-}
 
 function filterItemByLabelKodeNama(
   item: { label: string; kode: string; nama: string },
@@ -188,31 +182,14 @@ export default function ReportPage() {
     ],
   );
 
-  const barangOptions = useMemo(() => {
-    const rows = [
-      ...items
-        .filter((item) => item.status === "aktif")
-        .map((item) => ({
-          value: `item:${item.id}`,
-          label: `${item.kode} - ${item.nama}`,
-          kode: item.kode,
-          nama: item.nama,
-          jenis: "item" as const,
-          refId: item.id,
-        })),
-      ...finishGoods
-        .filter((fg) => fg.status === "aktif")
-        .map((fg) => ({
-          value: `fg:${fg.id}`,
-          label: `${fg.kode} - ${fg.nama}`,
-          kode: fg.kode,
-          nama: fg.nama,
-          jenis: "fg" as const,
-          refId: fg.id,
-        })),
-    ];
-    return rows.sort((a, b) => a.label.localeCompare(b.label, "id"));
-  }, [items, finishGoods]);
+  const barangOptions = useMemo(
+    () =>
+      buildBarangOptions(items, finishGoods).map((opt) => ({
+        ...opt,
+        refId: opt.value.slice(opt.value.indexOf(":") + 1),
+      })),
+    [items, finishGoods],
+  );
 
   const selectedBarang = useMemo(
     () => barangOptions.find((option) => option.value === selectedItem) ?? null,
@@ -279,7 +256,7 @@ export default function ReportPage() {
         nama: fg.nama,
         jenis: "fg" as const,
       })),
-    ].sort((a, b) => a.label.localeCompare(b.label, "id"));
+    ].sort(compareBarangOption);
     return [
       {
         value: "all",
@@ -723,7 +700,7 @@ export default function ReportPage() {
                   items={barangOptions}
                   value={selectedItem}
                   onValueChange={setSelectedItem}
-                  filterItem={filterItemByKodeNama}
+                  filterItem={filterBarangByKodeNama}
                   renderItem={(item) => (
                     <ItemNameWithType jenis={item.jenis}>
                       {item.label}

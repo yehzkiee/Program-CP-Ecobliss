@@ -731,7 +731,7 @@ function loadStateSqlite(database = openDatabase()): PersistedData {
       uom3: row.uom3,
       konversi3: row.konversi3,
       batchCustomer: row.batch_customer,
-      status: row.status,
+      status: String(row.status ?? "aktif").trim() as MaterialItem["status"],
     })),
     finishGoods: (
       database.prepare("SELECT * FROM finish_goods ORDER BY kode").all() as {
@@ -762,7 +762,7 @@ function loadStateSqlite(database = openDatabase()): PersistedData {
       konversi2: row.konversi2,
       uom3: row.uom3,
       konversi3: row.konversi3,
-      status: row.status,
+      status: String(row.status ?? "aktif").trim() as FinishGood["status"],
     })),
     gudangList: database
       .prepare("SELECT id, kode, nama, tipe FROM gudang ORDER BY kode")

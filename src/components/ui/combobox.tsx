@@ -8,12 +8,45 @@ import { cn } from "@/lib/utils"
 export type SearchableComboboxItem = {
   value: string
   label: string
+  /** Optional: dipakai agar Material + Finish Good sama-sama tampil saat daftar dipotong. */
+  jenis?: string
 }
 
 const RESULT_LIMIT = 100
 
 function defaultFilterItem(item: SearchableComboboxItem, query: string) {
   return item.label.toLowerCase().includes(query.toLowerCase())
+}
+
+/**
+ * Potong hasil tanpa mengubur Material di balik daftar Finish Good yang panjang.
+ * Material selalu diprioritaskan di awal daftar tampilan.
+ */
+function limitMixedJenisItems<T extends SearchableComboboxItem>(
+  matched: T[],
+  limit: number,
+): T[] {
+  const materials = matched.filter((item) => item.jenis === "item")
+  const finishGoods = matched.filter((item) => item.jenis === "fg")
+  const others = matched.filter(
+    (item) => item.jenis !== "item" && item.jenis !== "fg",
+  )
+
+  // Tanpa marker jenis: fallback potong biasa.
+  if (materials.length === 0 && finishGoods.length === 0) {
+    return matched.slice(0, limit)
+  }
+
+  // Material dulu (semua yang muat), sisa kuota untuk FG, lalu other.
+  const takeMat = Math.min(materials.length, limit)
+  const takeFg = Math.min(finishGoods.length, limit - takeMat)
+  const takeOther = Math.min(others.length, limit - takeMat - takeFg)
+
+  return [
+    ...materials.slice(0, takeMat),
+    ...finishGoods.slice(0, takeFg),
+    ...others.slice(0, takeOther),
+  ]
 }
 
 type SearchableComboboxProps<T extends SearchableComboboxItem> = {
@@ -109,7 +142,7 @@ function SearchableComboboxInner<T extends SearchableComboboxItem>({
     const matched = browsing
       ? items
       : items.filter((item) => filterItem(item, query.trim()))
-    let visibleItems = matched.slice(0, RESULT_LIMIT)
+    let visibleItems = limitMixedJenisItems(matched, RESULT_LIMIT)
     if (
       selected &&
       matched.some((item) => item.value === selected.value) &&

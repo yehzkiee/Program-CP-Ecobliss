@@ -660,7 +660,7 @@ export async function loadStateMysql(): Promise<PersistedData> {
       uom3: String(row.uom3),
       konversi3: Number(row.konversi3),
       batchCustomer: String(row.batch_customer),
-      status: String(row.status) as MaterialItem["status"],
+      status: String(row.status ?? "aktif").trim() as MaterialItem["status"],
     })) satisfies MaterialItem[],
     finishGoods: fgs.map((row) => ({
       id: String(row.id),
@@ -675,7 +675,7 @@ export async function loadStateMysql(): Promise<PersistedData> {
       konversi2: Number(row.konversi2),
       uom3: String(row.uom3),
       konversi3: Number(row.konversi3),
-      status: String(row.status) as FinishGood["status"],
+      status: String(row.status ?? "aktif").trim() as FinishGood["status"],
     })) satisfies FinishGood[],
     gudangList: gudangList.map((row) => ({
       id: String(row.id),
