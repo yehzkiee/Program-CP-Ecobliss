@@ -1,8 +1,11 @@
 /**
  * QA E2E untuk perbaikan form Stock Opname + Adjustment:
  * 1) Dropdown "Cari kode atau nama barang..." menampilkan Material (bukan hanya FG)
- * 2) Metode "Per Finish Good" auto-populate worksheet dari Gudang FG
- * 3) Qty Aktual bisa diedit; simpan hanya baris selisih
+ * 2) Metode "Per Finish Good" TIDAK auto-populate; tambah manual via search
+ * 3) Qty Aktual bisa diedit setelah baris ditambahkan
+ *
+ * Catatan: skenario lengkap 3 feedback terbaru ada di
+ *   node scripts/qa-feedback-fixes-e2e.mjs
  *
  *   npm install --no-save playwright
  *   node scripts/qa-stock-forms-e2e.mjs
@@ -157,121 +160,49 @@ async function main() {
     await page.keyboard.press("Escape");
 
     // ============================================================
-    // 2) Stock Opname — Per Finish Good auto-populate
+    // 2) Stock Opname — Per Finish Good: tidak auto-populate
     // ============================================================
     const metodeFg = page.getByLabel("Per Finish Good");
     await metodeFg.check();
     check("radio Per Finish Good bisa dipilih", await metodeFg.isChecked());
+    await page.waitForTimeout(400);
 
-    await page
-      .getByText(/Worksheet diisi otomatis dari stok Finish Good/i)
-      .waitFor({ timeout: 10000 })
-      .catch(() => null);
+    check(
+      "Per Finish Good tidak auto-populate worksheet",
+      await page
+        .getByText(/Cari dan tambahkan Finish Good untuk mulai mengisi worksheet/i)
+        .isVisible(),
+    );
+    check(
+      "Per Finish Good search barang tersedia",
+      await page.getByPlaceholder(/Cari kode atau nama barang/i).first().isVisible(),
+    );
 
-    const worksheet = page.getByRole("table").first();
-    const emptyHint = page.getByText(/Tidak ada stok Finish Good di Gudang FG/i);
-    const hasTable = await worksheet.isVisible().catch(() => false);
-    const isEmpty = await emptyHint.isVisible().catch(() => false);
+    const { input: fgBarang, listbox: fgList } = await openBarangDropdown(page);
+    await fgBarang.fill("FG");
+    await page.waitForTimeout(400);
+    const fgOptions = await optionTexts(fgList.getByRole("option"));
+    const hasFgOpt = fgOptions.some(looksLikeFinishGood) || fgOptions.length > 0;
+    check("Per Finish Good dropdown berisi Finish Good", hasFgOpt, fgOptions.slice(0, 5).join(" | "));
 
-    if (isEmpty && !hasTable) {
-      check(
-        "Per Finish Good: worksheet kosong hanya jika memang tidak ada stok FG",
-        true,
-        "tidak ada stok FG di Gudang FG (valid)",
-      );
-    } else {
-      await worksheet.waitFor({ state: "visible", timeout: 15000 });
-      const rows = worksheet.locator("tbody tr");
-      const rowCount = await rows.count();
-      check(
-        "Per Finish Good auto-populate worksheet",
-        rowCount > 0,
-        `rows=${rowCount}`,
-      );
+    if (hasFgOpt) {
+      await fgList.getByRole("option").first().click();
+      await page.getByRole("button", { name: /Tambah Baris/i }).click();
+      await page.waitForTimeout(500);
+      const worksheet = page.getByRole("table").first();
+      const hasTable = await worksheet.isVisible().catch(() => false);
+      check("Per Finish Good manual Tambah Baris mengisi worksheet", hasTable);
 
-      if (rowCount > 0) {
-        const firstRowText = (await rows.first().innerText()).replace(/\s+/g, " ");
-        check(
-          "baris worksheet berisi Finish Good",
-          /Finish Good|FG/i.test(firstRowText) || firstRowText.length > 10,
-          firstRowText.slice(0, 180),
-        );
-
-        const qtySistem = rows.first().locator("td").nth(6);
-        const sistemText = (await qtySistem.innerText()).trim();
-        check(
-          "Qty Sistem terisi angka",
-          /^\d+(\.\d+)?$/.test(sistemText),
-          sistemText,
-        );
-
-        const qtyAktual = rows.first().locator('input[type="number"]').first();
-        await qtyAktual.waitFor({ state: "visible" });
-        const before = await qtyAktual.inputValue();
-        const nextQty = String(Number(before || "0") + 1);
-        await qtyAktual.fill(nextQty);
-        check(
-          "Qty Aktual bisa diedit",
-          (await qtyAktual.inputValue()) === nextQty,
-          `before=${before} after=${await qtyAktual.inputValue()}`,
-        );
-
-        const ket = page
-          .locator("label")
-          .filter({ hasText: /^Keterangan$/ })
-          .locator("xpath=..")
-          .locator("input, textarea")
-          .first();
-        await ket.fill(note);
-
-        const saved = page.waitForResponse(
-          (res) =>
-            res.url().includes("/api/state") &&
-            res.request().method() === "PUT" &&
-            res.ok(),
-          { timeout: 20000 },
-        ).catch(() => null);
-
-        await page.getByRole("button", { name: /Simpan \(hanya selisih\)/i }).click();
-        await page
-          .waitForURL(/\/transaksi\/stock-opname\/(?!baru)/, { timeout: 20000 })
-          .catch(() => null);
-
-        const leftCreate = !page.url().endsWith("/baru");
-        if (leftCreate) {
-          await saved;
-          check("Stock Opname Per Finish Good tersimpan", true);
-          const body = await page.locator("body").innerText();
+      if (hasTable) {
+        const qtyAktual = worksheet.locator('input[type="number"]').first();
+        if (await qtyAktual.isVisible().catch(() => false)) {
+          const before = await qtyAktual.inputValue();
+          const nextQty = String(Number(before || "0") + 1);
+          await qtyAktual.fill(nextQty);
           check(
-            "detail SO menampilkan metode Per Finish Good",
-            /Per Finish Good/i.test(body),
-            body.slice(0, 240),
-          );
-        } else {
-          // Mungkin gagal karena Batch/No BTB wajib — coba pilih lot dulu
-          const lotCombo = page
-            .getByPlaceholder(/Cari Batch \/ No\. BTB/i)
-            .first();
-          if (await lotCombo.isVisible().catch(() => false)) {
-            await lotCombo.click();
-            const lotOpt = page.getByRole("option").first();
-            if (await lotOpt.count()) {
-              await lotOpt.click();
-              await qtyAktual.fill(nextQty);
-              await page
-                .getByRole("button", { name: /Simpan \(hanya selisih\)/i })
-                .click();
-              await page
-                .waitForURL(/\/transaksi\/stock-opname\/(?!baru)/, {
-                  timeout: 20000,
-                })
-                .catch(() => null);
-            }
-          }
-          check(
-            "Stock Opname Per Finish Good tersimpan",
-            !page.url().endsWith("/baru"),
-            page.url(),
+            "Qty Aktual bisa diedit",
+            (await qtyAktual.inputValue()) === nextQty,
+            `before=${before}`,
           );
         }
       }

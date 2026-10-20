@@ -75,7 +75,19 @@ function AdjustmentFormInner() {
   const canApprove = isSuperAdmin(user?.role);
 
   const soFromQuery = search.get("so");
-  const initialSo = existing?.stockOpnameId ?? soFromQuery ?? "";
+
+  function isStockOpnameSelectable(soId: string) {
+    if (!soId) return true;
+    const adj = adjustments.find((a) => a.stockOpnameId === soId);
+    if (!adj) return true;
+    return adj.status !== "disetujui" && adj.status !== "menunggu_approval";
+  }
+
+  const initialSoRaw = existing?.stockOpnameId ?? soFromQuery ?? "";
+  const initialSo =
+    isNew && initialSoRaw && !isStockOpnameSelectable(initialSoRaw)
+      ? ""
+      : initialSoRaw;
 
   const [tanggal, setTanggal] = useState(existing?.tanggal ?? todayISO());
   const [soId, setSoId] = useState(initialSo);
@@ -93,12 +105,17 @@ function AdjustmentFormInner() {
 
   const selectedSo = stockOpnames.find((s) => s.id === soId);
 
+  /** SO yang sudah punya Adjustment disetujui / menunggu approval tidak bisa dipilih lagi. */
+  const selectableStockOpnames = useMemo(() => {
+    return stockOpnames.filter((so) => isStockOpnameSelectable(so.id));
+  }, [stockOpnames, adjustments]);
+
   const soSelectItems = useMemo(
     () => [
       { value: NO_SO, label: "Tanpa Stock Opname" },
-      ...stockOpnames.map((s) => ({ value: s.id, label: s.no })),
+      ...selectableStockOpnames.map((s) => ({ value: s.id, label: s.no })),
     ],
-    [stockOpnames],
+    [selectableStockOpnames],
   );
 
   const productOptions = useMemo(
@@ -182,6 +199,15 @@ function AdjustmentFormInner() {
   });
 
   function loadFromSo(id: string) {
+    if (id && !isStockOpnameSelectable(id)) {
+      toast.error(
+        "Stock Opname ini sudah memiliki Adjustment yang disetujui atau menunggu approval",
+      );
+      setSoId("");
+      setLines([]);
+      setQtyText({});
+      return;
+    }
     setSoId(id);
     setQtyText({});
     const so = stockOpnames.find((s) => s.id === id);

@@ -27,7 +27,6 @@ import {
 } from "@/lib/barang-options";
 import { useAuthStore, useDataStore } from "@/lib/store";
 import type {
-  FinishGood,
   OpnameMetode,
   StockOpname,
   StockOpnameLine,
@@ -56,15 +55,15 @@ function metodeLabel(metode: OpnameMetode) {
 
 function metodeHint(metode: OpnameMetode) {
   if (metode === "per_batch") {
-    return "Worksheet menampilkan stok per batch customer.";
+    return "Flag transaksi: baris ditambahkan per batch. Cari dan tambah barang secara manual.";
   }
   if (metode === "per_gudang") {
-    return "Worksheet menampilkan seluruh stok pada gudang yang dipilih, digabung per Material/FG.";
+    return "Flag transaksi: opname per gudang. Cari dan tambah barang secara manual.";
   }
   if (metode === "per_finish_good") {
-    return "Worksheet otomatis memuat seluruh Finish Good di Gudang FG, per Batch / No. BTB.";
+    return "Flag transaksi: opname Finish Good. Cari dan tambah barang secara manual.";
   }
-  return "Worksheet menggabungkan stok per Material/FG dan gudang.";
+  return "Flag transaksi: opname per Material/FG. Cari dan tambah barang secara manual.";
 }
 
 function productKey(jenis: "item" | "fg", refId: string) {
@@ -77,13 +76,6 @@ function parseProductKey(key: string): { jenis: "item" | "fg"; refId: string } |
   return { jenis, refId };
 }
 
-function draftLineKey(d: DraftLine, metode: OpnameMetode) {
-  if (metode === "per_batch" || metode === "per_finish_good") {
-    return `${d.jenis}-${d.refId}-${d.gudangId}-${d.batchCustomer ?? ""}-${d.btbId ?? ""}`;
-  }
-  return `${d.jenis}-${d.refId}-${d.gudangId}`;
-}
-
 function buildDraftsFromStock(
   stock: StockRow[],
   selectedProduct: string,
@@ -93,7 +85,7 @@ function buildDraftsFromStock(
     ? stock.filter((r) => productKey(r.jenis, r.refId) === selectedProduct)
     : [];
 
-  if (metode === "per_batch") {
+  if (metode === "per_batch" || metode === "per_finish_good") {
     return filtered.map((r) => ({
       jenis: r.jenis,
       refId: r.refId,
@@ -132,72 +124,6 @@ function buildDraftsFromStock(
     }
   }
   return Array.from(map.values());
-}
-
-/** Semua stok di satu gudang, batch digabung per Material/FG. */
-function buildDraftsFromGudang(stock: StockRow[], gudangId: string): DraftLine[] {
-  const map = new Map<string, DraftLine>();
-  for (const r of stock) {
-    if (r.gudangId !== gudangId) continue;
-    const key = `${r.jenis}-${r.refId}`;
-    const prev = map.get(key);
-    if (prev) {
-      prev.qtySistem += r.qty;
-      prev.qtyAktualInput += r.qty;
-      continue;
-    }
-    map.set(key, {
-      jenis: r.jenis,
-      refId: r.refId,
-      kode: r.kode,
-      nama: r.nama,
-      customerId: r.customerId,
-      gudangId: r.gudangId,
-      qtySistem: r.qty,
-      qtyAktual: r.qty,
-      selisih: 0,
-      qtyAktualInput: r.qty,
-    });
-  }
-  return Array.from(map.values());
-}
-
-/** Seluruh lot Finish Good di Gudang FG (per Batch / No. BTB). */
-function buildDraftsFromFinishGood(
-  batchStock: BtbBatchStock[],
-  finishGoods: FinishGood[],
-  gudangFgIds: Set<string>,
-): DraftLine[] {
-  const fgMap = Object.fromEntries(finishGoods.map((f) => [f.id, f]));
-  const lines: DraftLine[] = [];
-  for (const lot of batchStock) {
-    if (lot.jenis !== "fg") continue;
-    if (!gudangFgIds.has(lot.gudangId)) continue;
-    if (lot.qty <= 0) continue;
-    const fg = fgMap[lot.refId];
-    if (!fg) continue;
-    lines.push({
-      jenis: "fg",
-      refId: lot.refId,
-      kode: fg.kode,
-      nama: fg.nama,
-      customerId: lot.customerId || fg.customerId,
-      gudangId: lot.gudangId,
-      batchCustomer: lot.batchCustomer,
-      btbId: lot.btbId,
-      btbNo: lot.btbNo,
-      qtySistem: lot.qty,
-      qtyAktual: lot.qty,
-      selisih: 0,
-      qtyAktualInput: lot.qty,
-    });
-  }
-  return lines.sort(
-    (a, b) =>
-      a.kode.localeCompare(b.kode, "id") ||
-      (a.btbNo ?? "").localeCompare(b.btbNo ?? "", "id") ||
-      (a.batchCustomer ?? "").localeCompare(b.batchCustomer ?? "", "id"),
-  );
 }
 
 /** Zero-stock placeholder when barang belum punya stok di sistem. */
@@ -445,37 +371,13 @@ export default function StockOpnameFormPage() {
     return Array.from(keys);
   }, [drafts]);
 
-  const selectedGudangIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const d of drafts) ids.add(d.gudangId);
-    return Array.from(ids);
-  }, [drafts]);
-
-  const availableToAdd = useMemo(
-    () =>
-      productOptions.filter((p) => !selectedProductKeys.includes(p.value)),
-    [productOptions, selectedProductKeys],
-  );
-
-  const gudangOptions = useMemo(
-    () =>
-      gudangList.map((g) => ({
-        value: g.id,
-        label: `${g.kode} - ${g.nama}`,
-      })),
-    [gudangList],
-  );
-
-  const availableGudang = useMemo(
-    () => gudangOptions.filter((g) => !selectedGudangIds.includes(g.value)),
-    [gudangOptions, selectedGudangIds],
-  );
-
-  const gudangFgIds = useMemo(
-    () =>
-      new Set(gudangList.filter((g) => g.tipe === "fg").map((g) => g.id)),
-    [gudangList],
-  );
+  const availableToAdd = useMemo(() => {
+    const pool =
+      metode === "per_finish_good"
+        ? productOptions.filter((p) => p.jenis === "fg")
+        : productOptions;
+    return pool.filter((p) => !selectedProductKeys.includes(p.value));
+  }, [productOptions, selectedProductKeys, metode]);
 
   function resetFromExisting() {
     if (!existing) return;
@@ -491,33 +393,21 @@ export default function StockOpnameFormPage() {
     setPickerValue("");
   }
 
-  function addGudang(gudangId: string) {
-    if (!gudangId) return;
-    if (selectedGudangIds.includes(gudangId)) {
-      toast.error("Gudang sudah ada di worksheet");
-      setPickerValue("");
-      return;
-    }
-    const nextLines = buildDraftsFromGudang(stock, gudangId).map(withDefaultLot);
-    if (nextLines.length === 0) {
-      toast.error("Gudang tidak memiliki stok");
-      setPickerValue("");
-      return;
-    }
-    setDrafts((prev) => [...prev, ...nextLines]);
-    setPickerValue("");
-  }
-
-  function removeGudang(gudangId: string) {
-    setDrafts((prev) => prev.filter((d) => d.gudangId !== gudangId));
-  }
-
   function addProduct(key: string) {
     if (!key) return;
     if (selectedProductKeys.includes(key)) {
       toast.error("Barang sudah ada di worksheet");
       setPickerValue("");
       return;
+    }
+
+    if (metode === "per_finish_good") {
+      const parsed = parseProductKey(key);
+      if (!parsed || parsed.jenis !== "fg") {
+        toast.error("Metode Per Finish Good hanya untuk Finish Good");
+        setPickerValue("");
+        return;
+      }
     }
 
     let nextLines = buildDraftsFromStock(stock, key, metode).map(withDefaultLot);
@@ -545,114 +435,26 @@ export default function StockOpnameFormPage() {
     setDrafts((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  function loadFinishGoodWorksheet(preserveQty = false): DraftLine[] {
-    if (gudangFgIds.size === 0) {
-      toast.error("Gudang Finish Good tidak ditemukan");
-      return [];
-    }
-    const prevByKey = preserveQty
-      ? new Map(
-          drafts.map((d) => [
-            draftLineKey(d, "per_finish_good"),
-            d.qtyAktualInput,
-          ]),
-        )
-      : null;
-    const lines = buildDraftsFromFinishGood(
-      batchStock,
-      finishGoods,
-      gudangFgIds,
-    ).map((line) => {
-      if (prevByKey) {
-        const prevQty = prevByKey.get(draftLineKey(line, "per_finish_good"));
-        if (prevQty !== undefined) line.qtyAktualInput = prevQty;
-      }
-      return line;
-    });
-    if (lines.length === 0) {
-      toast.error("Tidak ada stok Finish Good di Gudang FG");
-    }
-    return lines;
-  }
-
+  /** Metode hanya flag metadata; tidak auto-populate worksheet. */
   function changeMetode(next: OpnameMetode) {
     if (next === metode) return;
-
-    const prevByKey = new Map(
-      drafts.map((d) => [draftLineKey(d, metode), d.qtyAktualInput]),
-    );
-    function withPrevQty(line: DraftLine) {
-      const prevQty = prevByKey.get(draftLineKey(line, next));
-      if (prevQty !== undefined) line.qtyAktualInput = prevQty;
-      return line;
-    }
-
-    if (next === "per_finish_good") {
-      setMetode(next);
-      setDrafts(loadFinishGoodWorksheet(drafts.length > 0));
-      setPickerValue("");
-      return;
-    }
-
-    if (drafts.length === 0) {
-      setMetode(next);
-      setPickerValue("");
-      return;
-    }
-
-    if (next === "per_gudang") {
-      const rebuilt: DraftLine[] = [];
-      for (const gudangId of selectedGudangIds) {
-        for (const line of buildDraftsFromGudang(stock, gudangId)) {
-          rebuilt.push(withDefaultLot(withPrevQty(line)));
-        }
-      }
-      setMetode(next);
-      setDrafts(rebuilt);
-      setPickerValue("");
-      return;
-    }
-
-    if (
-      (metode === "per_gudang" || metode === "per_finish_good") &&
-      next === "per_item"
-    ) {
-      setMetode(next);
-      setPickerValue("");
-      return;
-    }
-
-    const gudangFilter =
-      metode === "per_gudang" || metode === "per_finish_good"
-        ? new Set(selectedGudangIds)
-        : null;
-    const rebuilt: DraftLine[] = [];
-    for (const key of selectedProductKeys) {
-      let lines = buildDraftsFromStock(stock, key, next);
-      if (gudangFilter) {
-        lines = lines.filter((line) => gudangFilter.has(line.gudangId));
-      }
-      if (lines.length === 0) {
-        const empty = buildEmptyDraft(
-          key,
-          items,
-          finishGoods,
-          fallbackGudangId,
-        );
-        if (empty && (!gudangFilter || gudangFilter.has(empty.gudangId))) {
-          lines = [empty];
-        }
-      }
-      for (const line of lines) rebuilt.push(withDefaultLot(withPrevQty(line)));
-    }
     setMetode(next);
-    setDrafts(rebuilt);
+    setDrafts([]);
     setPickerValue("");
   }
 
   function save() {
     if (drafts.length === 0) {
-      toast.error("Tambahkan minimal satu Material atau Finish Good");
+      toast.error(
+        metode === "per_finish_good"
+          ? "Tambahkan minimal satu Finish Good"
+          : "Tambahkan minimal satu Material atau Finish Good",
+      );
+      return;
+    }
+
+    if (metode === "per_finish_good" && drafts.some((d) => d.jenis !== "fg")) {
+      toast.error("Metode Per Finish Good hanya boleh berisi Finish Good");
       return;
     }
 
@@ -851,145 +653,80 @@ export default function StockOpnameFormPage() {
               <p className="text-xs text-muted-foreground">{metodeHint(metode)}</p>
             </div>
 
-            {metode === "per_finish_good" ? (
-              <div className="space-y-2 sm:col-span-2">
-                <p className="text-sm text-muted-foreground">
-                  Worksheet diisi otomatis dari stok Finish Good di Gudang FG.
-                  Isi Qty Aktual pada tiap baris, lalu simpan.
-                </p>
-                {drafts.length > 0 && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setDrafts(loadFinishGoodWorksheet())}
-                  >
-                    Muat Ulang dari Gudang FG
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-2 sm:col-span-2">
-                <Label>
-                  {metode === "per_gudang"
-                    ? "Tambah Gudang"
-                    : "Tambah Barang (Material / Finish Good)"}
-                </Label>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                  <div className="min-w-0 flex-1">
-                    {metode === "per_gudang" ? (
-                      <SearchableCombobox
-                        items={availableGudang}
-                        value={pickerValue}
-                        onValueChange={setPickerValue}
-                        placeholder={
-                          availableGudang.length === 0
-                            ? "Semua gudang sudah ditambahkan"
-                            : "Cari gudang..."
-                        }
-                        emptyText="Tidak ada gudang yang cocok"
-                        disabled={availableGudang.length === 0}
-                        itemNoun="gudang"
-                        className="bg-white"
-                      />
-                    ) : (
-                      <SearchableCombobox
-                        items={availableToAdd}
-                        value={pickerValue}
-                        onValueChange={setPickerValue}
-                        filterItem={filterBarangByKodeNama}
-                        renderItem={(item) => (
-                          <ItemNameWithType jenis={item.jenis}>
-                            {item.label}
-                          </ItemNameWithType>
-                        )}
-                        placeholder={
-                          availableToAdd.length === 0
-                            ? "Semua barang sudah ditambahkan"
-                            : "Cari kode atau nama barang..."
-                        }
-                        emptyText="Tidak ada barang yang cocok"
-                        disabled={availableToAdd.length === 0}
-                        className="bg-white"
-                      />
+            <div className="space-y-2 sm:col-span-2">
+              <Label>
+                {metode === "per_finish_good"
+                  ? "Tambah Finish Good"
+                  : "Tambah Barang (Material / Finish Good)"}
+              </Label>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <div className="min-w-0 flex-1">
+                  <SearchableCombobox
+                    items={availableToAdd}
+                    value={pickerValue}
+                    onValueChange={setPickerValue}
+                    filterItem={filterBarangByKodeNama}
+                    renderItem={(item) => (
+                      <ItemNameWithType jenis={item.jenis}>
+                        {item.label}
+                      </ItemNameWithType>
                     )}
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-8 bg-emerald-700 hover:bg-emerald-800"
-                    disabled={!pickerValue}
-                    onClick={() =>
-                      metode === "per_gudang"
-                        ? addGudang(pickerValue)
-                        : addProduct(pickerValue)
+                    placeholder={
+                      availableToAdd.length === 0
+                        ? metode === "per_finish_good"
+                          ? "Semua Finish Good sudah ditambahkan"
+                          : "Semua barang sudah ditambahkan"
+                        : "Cari kode atau nama barang..."
                     }
-                  >
-                    <Plus className="mr-1 size-4" />
-                    Tambah Baris
-                  </Button>
+                    emptyText="Tidak ada barang yang cocok"
+                    disabled={availableToAdd.length === 0}
+                    className="bg-white"
+                  />
                 </div>
-                {metode === "per_gudang"
-                  ? selectedGudangIds.length > 0 && (
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        {selectedGudangIds.map((gudangId) => {
-                          const gudang = gudangMap[gudangId];
-                          const label = gudang
-                            ? `${gudang.kode} - ${gudang.nama}`
-                            : gudangId;
-                          return (
-                            <span
-                              key={gudangId}
-                              className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs"
-                            >
-                              {label}
-                              <button
-                                type="button"
-                                className="rounded p-0.5 text-muted-foreground hover:bg-white hover:text-destructive"
-                                onClick={() => removeGudang(gudangId)}
-                                aria-label={`Hapus ${label}`}
-                              >
-                                <Trash2 className="size-3.5" />
-                              </button>
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )
-                  : selectedProductKeys.length > 0 && (
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        {selectedProductKeys.map((key) => {
-                          const opt = productOptions.find((p) => p.value === key);
-                          const sample = drafts.find(
-                            (d) => productKey(d.jenis, d.refId) === key,
-                          );
-                          const label =
-                            opt?.label ??
-                            (sample ? `${sample.kode} - ${sample.nama}` : key);
-                          const jenis = opt?.jenis ?? sample?.jenis;
-                          return (
-                            <span
-                              key={key}
-                              className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs"
-                            >
-                              <ItemNameWithType jenis={jenis}>
-                                {label}
-                              </ItemNameWithType>
-                              <button
-                                type="button"
-                                className="rounded p-0.5 text-muted-foreground hover:bg-white hover:text-destructive"
-                                onClick={() => removeProduct(key)}
-                                aria-label={`Hapus ${label}`}
-                              >
-                                <Trash2 className="size-3.5" />
-                              </button>
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 bg-emerald-700 hover:bg-emerald-800"
+                  disabled={!pickerValue}
+                  onClick={() => addProduct(pickerValue)}
+                >
+                  <Plus className="mr-1 size-4" />
+                  Tambah Baris
+                </Button>
               </div>
-            )}
+              {selectedProductKeys.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {selectedProductKeys.map((key) => {
+                    const opt = productOptions.find((p) => p.value === key);
+                    const sample = drafts.find(
+                      (d) => productKey(d.jenis, d.refId) === key,
+                    );
+                    const label =
+                      opt?.label ??
+                      (sample ? `${sample.kode} - ${sample.nama}` : key);
+                    const jenis = opt?.jenis ?? sample?.jenis;
+                    return (
+                      <span
+                        key={key}
+                        className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs"
+                      >
+                        <ItemNameWithType jenis={jenis}>
+                          {label}
+                        </ItemNameWithType>
+                        <button
+                          type="button"
+                          className="rounded p-0.5 text-muted-foreground hover:bg-white hover:text-destructive"
+                          onClick={() => removeProduct(key)}
+                          aria-label={`Hapus ${label}`}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </>
         )}
 
@@ -1015,10 +752,8 @@ export default function StockOpnameFormPage() {
               {isView
                 ? "Tidak ada baris selisih."
                 : metode === "per_finish_good"
-                  ? "Tidak ada stok Finish Good di Gudang FG."
-                  : metode === "per_gudang"
-                    ? "Tambahkan gudang untuk mulai mengisi worksheet."
-                    : "Tambahkan Material atau Finish Good untuk mulai mengisi worksheet."}
+                  ? "Cari dan tambahkan Finish Good untuk mulai mengisi worksheet."
+                  : "Tambahkan Material atau Finish Good untuk mulai mengisi worksheet."}
             </p>
           ) : (
             <table className={`${tableShellClass} min-w-[1530px]`}>

@@ -499,6 +499,40 @@ export default function ReportPage() {
   };
 
   /**
+   * Per Material / Per FG: agregasi per kombinasi barang + gudang
+   * (jangan gabungkan qty lintas gudang saat filter "Semua Gudang").
+   */
+  const groupByItemAndGudang = (jenis: "item" | "fg") => {
+    const map = new Map<
+      string,
+      { id: string; key: string; gudang: string; qty: number }
+    >();
+    for (const r of filteredStock) {
+      if (r.jenis !== jenis) continue;
+      const id = `${r.refId}::${r.gudangId}`;
+      const prev = map.get(id);
+      if (prev) {
+        prev.qty += r.qty;
+        continue;
+      }
+      map.set(id, {
+        id,
+        key: formatKodeNama(r.kode, r.nama),
+        gudang: r.gudangNama.trim() || "-",
+        qty: r.qty,
+      });
+    }
+    return Array.from(map.values()).sort(
+      (a, b) =>
+        a.key.localeCompare(b.key, "id") ||
+        a.gudang.localeCompare(b.gudang, "id"),
+    );
+  };
+
+  const perItemRows = groupByItemAndGudang("item");
+  const perFgRows = groupByItemAndGudang("fg");
+
+  /**
    * Per Batch No BTB: sisa stok digabung per nomor BTB sumber,
    * dengan filter Material/FG, Customer, dan Gudang.
    */
@@ -616,46 +650,46 @@ export default function ReportPage() {
         })),
       };
     }
+    if (tab === "per-item" || tab === "per-fg") {
+      const source = tab === "per-item" ? perItemRows : perFgRows;
+      return {
+        page: tab === "per-item" ? "Report_Per_Material" : "Report_Per_FG",
+        headers: {
+          key: tab === "per-item" ? "Material" : "Finish Good",
+          gudang: "Gudang",
+          qty: "Total Qty",
+        } as Record<string, string>,
+        rows: source.map((r) => ({
+          key: r.key,
+          gudang: r.gudang,
+          qty: r.qty,
+        })),
+      };
+    }
     const grouped =
       tab === "per-customer"
         ? groupSum((r) => r.customerNama)
-        : tab === "per-item"
-          ? groupSum((r) =>
-              r.jenis === "item" ? formatKodeNama(r.kode, r.nama) : "",
-            ).filter((r) => r.key)
-          : tab === "per-fg"
-            ? groupSum((r) =>
-                r.jenis === "fg" ? formatKodeNama(r.kode, r.nama) : "",
-              ).filter((r) => r.key)
-            : tab === "per-batch"
-              ? groupSum((r) => r.batchCustomer || "-")
-              : tab === "per-btb"
-                ? perBtbRows
-                : perGudangRows;
+        : tab === "per-batch"
+          ? groupSum((r) => r.batchCustomer || "-")
+          : tab === "per-btb"
+            ? perBtbRows
+            : perGudangRows;
     const title =
       tab === "per-customer"
         ? "Customer"
-        : tab === "per-item"
-          ? "Material"
-          : tab === "per-fg"
-            ? "Finish Good"
-            : tab === "per-batch"
-              ? "Batch Customer"
-              : tab === "per-btb"
-                ? "No. BTB"
-                : "Gudang";
+        : tab === "per-batch"
+          ? "Batch Customer"
+          : tab === "per-btb"
+            ? "No. BTB"
+            : "Gudang";
     const page =
       tab === "per-customer"
         ? "Report_Per_Customer"
-        : tab === "per-item"
-          ? "Report_Per_Material"
-          : tab === "per-fg"
-            ? "Report_Per_FG"
-            : tab === "per-batch"
-              ? "Report_Per_Batch_Customer"
-              : tab === "per-btb"
-                ? "Report_Per_Batch_No_BTB"
-                : "Report_Per_Gudang";
+        : tab === "per-batch"
+          ? "Report_Per_Batch_Customer"
+          : tab === "per-btb"
+            ? "Report_Per_Batch_No_BTB"
+            : "Report_Per_Gudang";
     return {
       page,
       headers: { key: title, qty: "Total Qty" } as Record<string, string>,
@@ -761,17 +795,15 @@ export default function ReportPage() {
         {tab === "per-item" && (
           <SimpleGroupTable
             title="Material"
-            rows={groupSum((r) =>
-              r.jenis === "item" ? formatKodeNama(r.kode, r.nama) : "",
-            ).filter((r) => r.key)}
+            rows={perItemRows}
+            showGudang
           />
         )}
         {tab === "per-fg" && (
           <SimpleGroupTable
             title="Finish Good"
-            rows={groupSum((r) =>
-              r.jenis === "fg" ? formatKodeNama(r.kode, r.nama) : "",
-            ).filter((r) => r.key)}
+            rows={perFgRows}
+            showGudang
           />
         )}
         {tab === "per-batch" && (
@@ -1106,30 +1138,38 @@ function StockTable({
 function SimpleGroupTable({
   title,
   rows,
+  showGudang = false,
 }: {
   title: string;
-  rows: { key: string; qty: number }[];
+  rows: { id?: string; key: string; gudang?: string; qty: number }[];
+  showGudang?: boolean;
 }) {
+  const colSpan = showGudang ? 3 : 2;
   return (
     <div className="overflow-x-auto rounded-xl border bg-white">
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>{title}</TableHead>
+            {showGudang && <TableHead>Gudang</TableHead>}
             <TableHead className="text-right">Total Qty</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={2} className="text-center text-muted-foreground">
+              <TableCell
+                colSpan={colSpan}
+                className="text-center text-muted-foreground"
+              >
                 Tidak ada data
               </TableCell>
             </TableRow>
           ) : (
             rows.map((r) => (
-              <TableRow key={r.key}>
+              <TableRow key={r.id ?? `${r.key}::${r.gudang ?? ""}`}>
                 <TableCell className="font-medium">{r.key}</TableCell>
+                {showGudang && <TableCell>{r.gudang || "-"}</TableCell>}
                 <TableCell className="text-right">{r.qty}</TableCell>
               </TableRow>
             ))
