@@ -7,8 +7,10 @@ import { CustomerFilterCombobox } from "@/components/shared/customer-filter-comb
 import { SearchableCombobox } from "@/components/ui/combobox";
 import { ItemNameWithType, ItemTypeBadge } from "@/components/shared/ItemTypeBadge";
 import { ExportExcelButton } from "@/components/shared/export-excel-button";
+import { MasterImportDialog } from "@/components/shared/master-import-dialog";
 import { PageHeader, StatusBadge } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
+import { Upload } from "lucide-react";
 import { ResponsiveInput } from "@/components/ui/responsive-input";
 import { Label } from "@/components/ui/label";
 import {
@@ -307,10 +309,12 @@ export default function ItemPage() {
   const items = useDataStore((s) => s.items);
   const customers = useDataStore((s) => s.customers);
   const upsert = useDataStore((s) => s.upsertItem);
+  const bulkUpsertItems = useDataStore((s) => s.bulkUpsertItems);
   const [filterItem, setFilterItem] = useState("all");
   const [filterCust, setFilterCust] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [open, setOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const custMap = useMemo(
     () => Object.fromEntries(customers.map((c) => [c.id, c])),
@@ -388,12 +392,18 @@ export default function ItemPage() {
         title="DB Material"
         description="Master material dengan customer, UOM, batch, dan status."
         action={
-          <Button
-            className="bg-emerald-700 hover:bg-emerald-800"
-            onClick={() => setOpen(true)}
-          >
-            Tambah Material
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="bg-white" onClick={() => setImportOpen(true)}>
+              <Upload className="size-4" />
+              Import
+            </Button>
+            <Button
+              className="bg-emerald-700 hover:bg-emerald-800"
+              onClick={() => setOpen(true)}
+            >
+              Tambah Material
+            </Button>
+          </div>
         }
       />
 
@@ -528,6 +538,17 @@ export default function ItemPage() {
         onSave={(row) => {
           upsert(row);
           toast.success("Material disimpan");
+        }}
+      />
+
+      <MasterImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        kind="material"
+        customers={customers}
+        existingItems={items}
+        onImportItems={(rows) => {
+          bulkUpsertItems(rows);
         }}
       />
     </div>

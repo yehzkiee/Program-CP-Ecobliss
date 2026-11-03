@@ -7,8 +7,10 @@ import { CustomerFilterCombobox } from "@/components/shared/customer-filter-comb
 import { SearchableCombobox } from "@/components/ui/combobox";
 import { ItemNameWithType } from "@/components/shared/ItemTypeBadge";
 import { ExportExcelButton } from "@/components/shared/export-excel-button";
+import { MasterImportDialog } from "@/components/shared/master-import-dialog";
 import { PageHeader, StatusBadge } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
+import { Upload } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ResponsiveInput } from "@/components/ui/responsive-input";
 import { Label } from "@/components/ui/label";
@@ -310,11 +312,13 @@ export default function FinishGoodPage() {
   const finishGoods = useDataStore((s) => s.finishGoods);
   const customers = useDataStore((s) => s.customers);
   const upsert = useDataStore((s) => s.upsertFg);
+  const bulkUpsertFgs = useDataStore((s) => s.bulkUpsertFgs);
   const [q, setQ] = useState("");
   const deferredQ = useDeferredValue(q);
   const [filterCust, setFilterCust] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [open, setOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const custMap = useMemo(
     () => Object.fromEntries(customers.map((c) => [c.id, c])),
@@ -388,12 +392,18 @@ export default function FinishGoodPage() {
         title="DB Finish Good"
         description="Master produk jadi dengan customer, batch, UOM, dan status."
         action={
-          <Button
-            className="bg-emerald-700 hover:bg-emerald-800"
-            onClick={() => setOpen(true)}
-          >
-            Tambah Finish Good
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="bg-white" onClick={() => setImportOpen(true)}>
+              <Upload className="size-4" />
+              Import
+            </Button>
+            <Button
+              className="bg-emerald-700 hover:bg-emerald-800"
+              onClick={() => setOpen(true)}
+            >
+              Tambah Finish Good
+            </Button>
+          </div>
         }
       />
 
@@ -496,6 +506,17 @@ export default function FinishGoodPage() {
         onSave={(row) => {
           upsert(row);
           toast.success("Finish Good disimpan");
+        }}
+      />
+
+      <MasterImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        kind="finish-good"
+        customers={customers}
+        existingFinishGoods={finishGoods}
+        onImportFinishGoods={(rows) => {
+          bulkUpsertFgs(rows);
         }}
       />
     </div>

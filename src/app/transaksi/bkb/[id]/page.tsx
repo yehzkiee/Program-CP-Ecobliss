@@ -30,6 +30,7 @@ import {
   lotsForCustomer,
   syncBtbQtySisa,
 } from "@/lib/mock/data";
+import { deleteDocConfirmDescription } from "@/lib/delete-transaksi-doc";
 import { JENIS_TRANSAKSI_BKB } from "@/lib/jenis-transaksi";
 import { useAuthStore, useDataStore } from "@/lib/store";
 import type { Bkb, BkbLineFg, BkbLineItem } from "@/lib/types";
@@ -254,6 +255,7 @@ export default function BkbFormPage() {
   const gudangList = useDataStore((s) => s.gudangList);
   const upsertBkb = useDataStore((s) => s.upsertBkb);
   const upsertBtb = useDataStore((s) => s.upsertBtb);
+  const deleteBkb = useDataStore((s) => s.deleteBkb);
   const addLog = useDataStore((s) => s.addLog);
   const user = useAuthStore((s) => s.currentUser);
   const { askConfirm, confirmDialog } = useConfirmDialog();
@@ -869,6 +871,36 @@ export default function BkbFormPage() {
     }
   }
 
+  function handleDeleteDocument() {
+    if (!existing) return;
+    askConfirm(
+      () => {
+        try {
+          deleteBkb(existing.id);
+          addLog({
+            waktu: new Date().toISOString(),
+            userId: user?.id ?? "local",
+            userNama: user?.nama ?? "User",
+            aksi: "Hapus BKB",
+            noTransaksi: existing.no,
+            detail: "Stok keluar dibatalkan",
+          });
+          toast.success(`${existing.no} dihapus`);
+          router.push("/transaksi/bkb");
+        } catch (err) {
+          console.error(err);
+          toast.error(`Gagal menghapus ${existing.no}`);
+        }
+      },
+      {
+        title: "Hapus dokumen BKB",
+        description: deleteDocConfirmDescription(existing.no),
+        confirmLabel: "Ya, Hapus",
+        cancelLabel: "Batal",
+      },
+    );
+  }
+
   const materialQtyInvalid =
     lineItems.some(
       (line, idx) => !qtyPositive(line.qty) || materialQtyOver(idx),
@@ -926,6 +958,13 @@ export default function BkbFormPage() {
                     onClick={() => setEditing(true)}
                   >
                     Edit
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    type="button"
+                    onClick={handleDeleteDocument}
+                  >
+                    Hapus Dokumen
                   </Button>
                 </>
               ) : (

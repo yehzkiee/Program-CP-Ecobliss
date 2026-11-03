@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { ExportExcelButton } from "@/components/shared/export-excel-button";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -14,7 +17,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useDataStore } from "@/lib/store";
+import {
+  deleteDocConfirmDescription,
+  getBtbDeleteBlockReason,
+} from "@/lib/delete-transaksi-doc";
+import { useAuthStore, useDataStore } from "@/lib/store";
+import type { Btb } from "@/lib/types";
 import { formatDateID, formatQty, sortByDateDesc } from "@/lib/utils";
 
 type QtyLine = { qty?: number; satuan?: string };
@@ -41,9 +49,17 @@ export default function BtbListPage() {
   const [searchSPK, setSearchSPK] = useState("");
   const [searchPO, setSearchPO] = useState("");
   const btbs = useDataStore((s) => s.btbs);
+  const bkbs = useDataStore((s) => s.bkbs);
+  const transfers = useDataStore((s) => s.transfers);
+  const adjustments = useDataStore((s) => s.adjustments);
+  const stockOpnames = useDataStore((s) => s.stockOpnames);
   const items = useDataStore((s) => s.items);
   const finishGoods = useDataStore((s) => s.finishGoods);
   const jenis = useDataStore((s) => s.jenisTransaksiList);
+  const deleteBtb = useDataStore((s) => s.deleteBtb);
+  const addLog = useDataStore((s) => s.addLog);
+  const user = useAuthStore((s) => s.currentUser);
+  const { askConfirm, confirmDialog } = useConfirmDialog();
   const jenisMap = useMemo(
     () => Object.fromEntries(jenis.map((j) => [j.id, j])),
     [jenis],
@@ -72,6 +88,44 @@ export default function BtbListPage() {
       return matchesSpk && matchesPo;
     });
   }, [sorted, searchSPK, searchPO]);
+  function handleDelete(doc: Btb) {
+    const blocked = getBtbDeleteBlockReason(doc, {
+      bkbs,
+      transfers,
+      adjustments,
+      stockOpnames,
+    });
+    if (blocked) {
+      toast.error(blocked);
+      return;
+    }
+    askConfirm(
+      () => {
+        try {
+          deleteBtb(doc.id);
+          addLog({
+            waktu: new Date().toISOString(),
+            userId: user?.id ?? "local",
+            userNama: user?.nama ?? "User",
+            aksi: "Hapus BTB",
+            noTransaksi: doc.no,
+            detail: "Stok masuk dibatalkan",
+          });
+          toast.success(`${doc.no} dihapus`);
+        } catch (err) {
+          console.error(err);
+          toast.error(`Gagal menghapus ${doc.no}`);
+        }
+      },
+      {
+        title: "Hapus dokumen BTB",
+        description: deleteDocConfirmDescription(doc.no),
+        confirmLabel: "Ya, Hapus",
+        cancelLabel: "Batal",
+      },
+    );
+  }
+
   const exportRows = filtered.map((b) => {
     const details = [
       ...documentLines(b.items, (line) => itemMap[line.itemId]?.nama),
@@ -91,6 +145,7 @@ export default function BtbListPage() {
 
   return (
     <div>
+      {confirmDialog}
       <PageHeader
         title="Bukti Terima Barang (BTB)"
         description="Daftar penerimaan barang dari customer ke gudang. Buka dokumen untuk melihat detail material dan finish good."
@@ -195,22 +250,38 @@ export default function BtbListPage() {
                   {b.items.length} material · {b.fgs.length} FG
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      window.open(
-                        `/print/btb/${b.id}`,
-                        "_blank",
-                        "noopener,noreferrer",
-                      );
-                    }}
-                  >
-                    Cetak
-                  </Button>
+                  <div className="flex items-start justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.open(
+                          `/print/btb/${b.id}`,
+                          "_blank",
+                          "noopener,noreferrer",
+                        );
+                      }}
+                    >
+                      Cetak
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      type="button"
+                      className="text-red-700 hover:bg-red-50 hover:text-red-800"
+                      aria-label={`Hapus ${b.no}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleDelete(b);
+                      }}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
                 );

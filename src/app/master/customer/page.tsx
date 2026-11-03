@@ -5,8 +5,10 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { CustomerFilterCombobox } from "@/components/shared/customer-filter-combobox";
 import { ExportExcelButton } from "@/components/shared/export-excel-button";
+import { MasterImportDialog } from "@/components/shared/master-import-dialog";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
+import { Upload } from "lucide-react";
 import { ResponsiveInput } from "@/components/ui/responsive-input";
 import { Label } from "@/components/ui/label";
 import {
@@ -99,9 +101,11 @@ export default function CustomerPage() {
   const items = useDataStore((s) => s.items);
   const finishGoods = useDataStore((s) => s.finishGoods);
   const upsert = useDataStore((s) => s.upsertCustomer);
+  const bulkUpsertCustomers = useDataStore((s) => s.bulkUpsertCustomers);
   const addLog = useDataStore((s) => s.addLog);
   const [filterCust, setFilterCust] = useState("all");
   const [open, setOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const counts = useMemo(() => {
     const map = new Map<
@@ -145,12 +149,18 @@ export default function CustomerPage() {
         title="DB Customer"
         description="Master data customer untuk Material dan Finish Good."
         action={
-          <Button
-            className="bg-emerald-700 hover:bg-emerald-800"
-            onClick={() => setOpen(true)}
-          >
-            Tambah Customer
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="bg-white" onClick={() => setImportOpen(true)}>
+              <Upload className="size-4" />
+              Import
+            </Button>
+            <Button
+              className="bg-emerald-700 hover:bg-emerald-800"
+              onClick={() => setOpen(true)}
+            >
+              Tambah Customer
+            </Button>
+          </div>
         }
       />
 
@@ -223,6 +233,24 @@ export default function CustomerPage() {
             detail: form.kode,
           });
           toast.success("Customer disimpan");
+        }}
+      />
+
+      <MasterImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        kind="customer"
+        customers={customers}
+        existingCustomers={customers}
+        onImportCustomers={(rows) => {
+          bulkUpsertCustomers(rows);
+          addLog({
+            waktu: new Date().toISOString(),
+            userId: "local",
+            userNama: "User",
+            aksi: "Import Customer",
+            detail: `${rows.length} baris`,
+          });
         }}
       />
     </div>

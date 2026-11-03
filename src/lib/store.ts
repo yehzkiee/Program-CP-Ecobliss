@@ -20,6 +20,7 @@ import {
   items as seedItems,
   jenisTransaksiList as seedJenis,
   stockOpnames as seedSo,
+  syncBtbQtySisa,
   transfers as seedTf,
   users as seedUsers,
 } from "@/lib/mock/data";
@@ -66,14 +67,19 @@ interface DataState {
   transfers: TransferGudang[];
   activityLogs: ActivityLog[];
   upsertCustomer: (c: Customer) => void;
+  bulkUpsertCustomers: (rows: Customer[]) => void;
   deleteCustomer: (id: string) => void;
   upsertItem: (i: MaterialItem) => void;
+  bulkUpsertItems: (rows: MaterialItem[]) => void;
   deleteItem: (id: string) => void;
   upsertFg: (f: FinishGood) => void;
+  bulkUpsertFgs: (rows: FinishGood[]) => void;
   deleteFg: (id: string) => void;
   upsertBom: (b: Bom) => void;
   upsertBtb: (b: Btb) => void;
+  deleteBtb: (id: string) => void;
   upsertBkb: (b: Bkb) => void;
+  deleteBkb: (id: string) => void;
   upsertStockOpname: (s: StockOpname) => void;
   upsertAdjustment: (a: Adjustment) => void;
   upsertTransfer: (t: TransferGudang) => void;
@@ -223,17 +229,40 @@ export const useDataStore = create<DataState>()(
       ...seed,
       upsertCustomer: (c) =>
         set({ customers: upsertById(get().customers, c) }),
+      bulkUpsertCustomers: (rows) => {
+        if (!rows.length) return;
+        // Sisipkan di depan sekali jalan agar urutan file terjaga (bukan terbalik).
+        set({ customers: [...rows, ...get().customers] });
+      },
       deleteCustomer: (id) =>
         set({ customers: get().customers.filter((x) => x.id !== id) }),
       upsertItem: (i) => set({ items: upsertById(get().items, i) }),
+      bulkUpsertItems: (rows) => {
+        if (!rows.length) return;
+        set({ items: [...rows, ...get().items] });
+      },
       deleteItem: (id) =>
         set({ items: get().items.filter((x) => x.id !== id) }),
       upsertFg: (f) => set({ finishGoods: upsertById(get().finishGoods, f) }),
+      bulkUpsertFgs: (rows) => {
+        if (!rows.length) return;
+        set({ finishGoods: [...rows, ...get().finishGoods] });
+      },
       deleteFg: (id) =>
         set({ finishGoods: get().finishGoods.filter((x) => x.id !== id) }),
       upsertBom: (b) => set({ boms: upsertById(get().boms, b) }),
       upsertBtb: (b) => set({ btbs: upsertById(get().btbs, b) }),
+      deleteBtb: (id) =>
+        set({ btbs: get().btbs.filter((x) => x.id !== id) }),
       upsertBkb: (b) => set({ bkbs: upsertById(get().bkbs, b) }),
+      /** Hapus BKB dan sync qtySisa BTB dalam satu persist (stok out ikut ter-revert). */
+      deleteBkb: (id) => {
+        const nextBkbs = get().bkbs.filter((x) => x.id !== id);
+        set({
+          bkbs: nextBkbs,
+          btbs: syncBtbQtySisa(get().btbs, nextBkbs),
+        });
+      },
       upsertStockOpname: (s) =>
         set({ stockOpnames: upsertById(get().stockOpnames, s) }),
       upsertAdjustment: (a) =>
